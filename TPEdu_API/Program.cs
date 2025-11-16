@@ -95,7 +95,7 @@ builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ILessonMaterialService, LessonMaterialService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddSingleton<IAiAnalysisService, AiAnalysisService>();
-
+builder.Services.AddScoped<IChatbotService, ChatbotService>();
 // Schedule Transactions
 builder.Services.AddScoped<IAvailabilityBlockService, AvailabilityBlockService>();
 builder.Services.AddScoped<ITutorApplicationService, TutorApplicationService>();
@@ -129,6 +129,7 @@ builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IPaymentLogRepository, PaymentLogRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
 
 // Schedule Transactions
 builder.Services.AddScoped<IClassRequestRepository, ClassRequestRepository>();

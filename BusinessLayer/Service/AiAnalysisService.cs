@@ -1,19 +1,17 @@
-﻿// Thêm các using này ở đầu file
-using Google.Cloud.AIPlatform.V1;
-// Bỏ using Google.Protobuf.WellKnownTypes; để tránh lỗi mơ hồ
+﻿using Google.Cloud.AIPlatform.V1;
 using BusinessLayer.Service.Interface;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Linq; // Cần cho .Select()
+using System.Linq;
 
 namespace BusinessLayer.Service
 {
     public class AiAnalysisService : IAiAnalysisService
     {
         private readonly PredictionServiceClient _client;
-        private readonly string _projectId = "tpedu-ai-project"; // <-- THAY BẰNG PROJECT ID CỦA BẠN
-        private readonly string _location = "us-central1";     // <-- THAY BẰNG REGION CỦA BẠN (vd: asia-southeast1)
-        private readonly string _model = "gemini-1.5-pro-preview-0409"; // Tên mô hình
+        private readonly string _projectId = "tpedu-ai-project";
+        private readonly string _location = "asia-southeast1";
+        private readonly string _model = "gemini-1.5-pro-preview-0409";
 
         public AiAnalysisService()
         {
@@ -25,14 +23,12 @@ namespace BusinessLayer.Service
             _client = clientBuilder.Build();
         }
 
-        public async Task<string> AnalyzeFileRelevanceAsync(string contextTitle, string fileUrl, string mimeType)
+        // === HÀM 1: PHÂN TÍCH FILE ===
+        public async Task<string> AnalyzeFileAsync(string textPrompt, string fileUrl, string mimeType)
         {
-            // 3. Xây dựng prompt đa phương thức (multimodal)
             var promptParts = new List<Part>
             {
-                new Part { Text = $"Bạn là trợ lý kiểm duyệt. Hãy phân tích file sau đây." },
-                new Part { Text = $"Chủ đề yêu cầu là: '{contextTitle}'." },
-                new Part { Text = "Nội dung file có liên quan đến chủ đề này không? File có chứa nội dung nhạy cảm (var) không? Trả lời ngắn gọn." },
+                new Part { Text = textPrompt },
                 new Part
                 {
                     FileData = new FileData
@@ -43,22 +39,42 @@ namespace BusinessLayer.Service
                 }
             };
 
-            // 4. === SỬA LỖI: Xây dựng yêu cầu (Request) từ trong ra ngoài ===
+            var request = BuildRequest(promptParts);
+            PredictResponse response = await _client.PredictAsync(request);
+            return ParseResponse(response);
+        }
 
-            // 4.1. Tạo ListValue cho 'parts'
-            // Dùng tên đầy đủ Google.Protobuf.WellKnownTypes.ListValue
-            var partsListValue = new Google.Protobuf.WellKnownTypes.ListValue();
+        // === HÀM 2: CHỈ VĂN BẢN (CHO CHATBOT) ===
+        public async Task<string> GenerateTextOnlyAsync(string textPrompt)
+        {
+            var promptParts = new List<Part>
+            {
+                new Part { Text = textPrompt }
+            };
 
-            // Dùng .AddRange() thay vì gán (Đây là hàm helper PartExtensions.ToValue())
-            partsListValue.Values.AddRange(promptParts.Select(p => p.ToValue()));
+            var request = BuildRequest(promptParts);
+            PredictResponse response = await _client.PredictAsync(request);
+            return ParseResponse(response);
+        }
 
-            // 4.2. Tạo 'content' struct (ĐÂY LÀ DÒNG SỬA LỖI CS1503)
+        // === HELPER 1: XÂY DỰNG REQUEST (DÙNG CHUNG) ===
+        private PredictRequest BuildRequest(List<Part> promptParts)
+        {
+            // 4.1. Tạo list các Value từ promptParts
+            var partsValues = promptParts.Select(p => p.ToValue()).ToList();
+
+            // 4.2. Tạo 'content' struct
             var contentStruct = new Google.Protobuf.WellKnownTypes.Struct();
-            contentStruct.Fields.Add("parts", Google.Protobuf.WellKnownTypes.Value.ForList(partsListValue)); // <--- Phải bọc trong .ForList()
+            var partsListValue = new Google.Protobuf.WellKnownTypes.Value
+            {
+                ListValue = new Google.Protobuf.WellKnownTypes.ListValue()
+            };
+            partsListValue.ListValue.Values.AddRange(partsValues);
+            contentStruct.Fields.Add("parts", partsListValue);
 
             // 4.3. Tạo 'instance' struct
             var instanceStruct = new Google.Protobuf.WellKnownTypes.Struct();
-            instanceStruct.Fields.Add("content", Google.Protobuf.WellKnownTypes.Value.ForStruct(contentStruct)); // <--- Phải bọc trong .ForStruct()
+            instanceStruct.Fields.Add("content", Google.Protobuf.WellKnownTypes.Value.ForStruct(contentStruct));
 
             // 4.4. Tạo 'instance' Value
             var instanceValue = Google.Protobuf.WellKnownTypes.Value.ForStruct(instanceStruct);
@@ -71,23 +87,20 @@ namespace BusinessLayer.Service
                 ).ToString(),
             };
 
-            // Dùng .Add() vì Instances là read-only
             request.Instances.Add(instanceValue);
 
-            // === KẾT THÚC SỬA LỖI ===
+            return request;
+        }
 
-            // 5. GỌI API
-            PredictResponse response = await _client.PredictAsync(request);
-
-            // 6. Đọc kết quả (Response)
+        // === HELPER 2: ĐỌC KẾT QUẢ (DÙNG CHUNG) ===
+        private string ParseResponse(PredictResponse response)
+        {
             try
             {
                 var prediction = response.Predictions.First();
-                // Dùng tên đầy đủ để tránh mơ hồ
                 var candidate = prediction.StructValue.Fields["candidates"].ListValue.Values[0];
                 var content = candidate.StructValue.Fields["content"].StructValue;
                 var textResponse = content.Fields["parts"].ListValue.Values[0].StructValue.Fields["text"].StringValue;
-
                 return textResponse;
             }
             catch (System.Exception ex)
@@ -97,13 +110,11 @@ namespace BusinessLayer.Service
         }
     }
 
-    // Helper class để chuyển Part -> Struct (Bắt buộc cho API)
+    // Helper class (Giữ nguyên)
     public static class PartExtensions
     {
-        // Đổi tên ToStruct thành ToValue để logic rõ ràng hơn
         public static Google.Protobuf.WellKnownTypes.Value ToValue(this Part part)
         {
-            // Dùng tên đầy đủ Google.Protobuf.WellKnownTypes.Struct
             var s = new Google.Protobuf.WellKnownTypes.Struct();
             if (part.Text != null)
                 s.Fields.Add("text", Google.Protobuf.WellKnownTypes.Value.ForString(part.Text));

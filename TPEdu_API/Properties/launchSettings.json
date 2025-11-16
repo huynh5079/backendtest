@@ -28,7 +28,8 @@
       "launchUrl": "swagger",
       "applicationUrl": "https://localhost:7055;http://localhost:5198",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "GOOGLE_APPLICATION_CREDENTIALS": "D:\\FPT\\2025 FALL\\tpedu-ai-project-90d42e5cc31e.json"
       }
     },
     "IIS Express": {
