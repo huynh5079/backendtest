@@ -1,120 +1,123 @@
-﻿//using BusinessLayer.Service.Interface;
-//using Google.Ai.Generativelanguage.V1Beta; // <-- Thư viện mới
-//using Microsoft.Extensions.Configuration; // Cần để đọc appsettings.json
-//using Microsoft.Extensions.Logging;
-//using System;
-//using System.Collections.Generic;
-//using System.Linq;
-//using System.Net.Http; // Cần để tải file từ Cloudinary
-//using System.Reflection.Metadata;
-//using System.Threading.Tasks;
+﻿using BusinessLayer.Service.Interface;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Mscc.GenerativeAI; // Thư viện Mscc
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 
-//namespace BusinessLayer.Service
-//{
-//    public class AiAnalysisService : IAiAnalysisService
-//    {
-//        private readonly string _apiKey;
-//        private readonly GenerativeServiceClient _client;
-//        private readonly IHttpClientFactory _httpClientFactory;
-//        private readonly ILogger<AiAnalysisService> _logger;
-//        private readonly string _model = "models/gemini-1.5-pro-preview-0409"; // Tên model của AI Studio
+namespace BusinessLayer.Service
+{
+    public class AiAnalysisService : IAiAnalysisService
+    {
+        private readonly GoogleAI _googleAi;
+        // Sử dụng string tên model trực tiếp để tránh lỗi phiên bản enum
+        private readonly string _modelName = "gemini-2.5-flash";
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<AiAnalysisService> _logger;
 
-//        public AiAnalysisService(IConfiguration configuration, IHttpClientFactory httpClientFactory, ILogger<AiAnalysisService> logger)
-//        {
-//            _apiKey = configuration["GoogleAiStudio:ApiKey"]
-//                      ?? throw new ArgumentNullException("GoogleAiStudio:ApiKey not found in appsettings.json");
+        public AiAnalysisService(IConfiguration configuration, IHttpClientFactory httpClientFactory, ILogger<AiAnalysisService> logger)
+        {
+            // Đọc Key từ appsettings.json
+            var apiKey = configuration["GoogleAiStudio:ApiKey"];
 
-//            // Tạo client mới
-//            _client = new GenerativeServiceClientBuilder
-//            {
-//                ApiKey = _apiKey
-//            }.Build();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new ArgumentNullException("GoogleAiStudio:ApiKey", "Không tìm thấy API Key trong appsettings.json. Vui lòng kiểm tra lại cấu hình.");
+            }
 
-//            _httpClientFactory = httpClientFactory;
-//            _logger = logger;
-//        }
+            _googleAi = new GoogleAI(apiKey);
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
+        }
 
-//        // === HÀM 1: PHÂN TÍCH FILE (ĐÃ NÂNG CẤP) ===
-//        public async Task<string> AnalyzeFileAsync(string textPrompt, string fileUrl, string mimeType)
-//        {
-//            _logger.LogInformation("Bắt đầu tải file từ URL: {FileUrl}", fileUrl);
+        // 1. Phân tích file (Hỗ trợ PDF, Ảnh, Video...)
+        public async Task<string> AnalyzeFileAsync(string textPrompt, string fileUrl, string mimeType)
+        {
+            _logger.LogInformation("Đang tải file từ URL: {FileUrl}", fileUrl);
 
-//            // BƯỚC 1: Tải file từ Cloudinary (hoặc URL bất kỳ) về server
-//            byte[] fileBytes;
-//            try
-//            {
-//                var http = _httpClientFactory.CreateClient();
-//                fileBytes = await http.GetByteArrayAsync(fileUrl);
-//            }
-//            catch (Exception ex)
-//            {
-//                _logger.LogError(ex, "Không thể tải file từ {FileUrl}", fileUrl);
-//                return $"Lỗi: Không thể tải file từ URL để phân tích.";
-//            }
+            byte[] fileBytes;
+            try
+            {
+                // Tải file về RAM
+                var client = _httpClientFactory.CreateClient();
+                fileBytes = await client.GetByteArrayAsync(fileUrl);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi tải file từ URL");
+                return "Lỗi: Không thể tải file tài liệu để phân tích.";
+            }
 
-//            _logger.LogInformation("Tải file thành công, kích thước: {Size} bytes. Gửi cho AI...", fileBytes.Length);
+            try
+            {
+                // Khởi tạo model
+                var model = _googleAi.GenerativeModel(model: _modelName);
 
-//            // BƯỚC 2: Xây dựng prompt (gửi nội dung file, không phải URL)
-//            var content = new Content
-//            {
-//                Parts =
-//                {
-//                    new Part { Text = textPrompt },
-//                    new Part
-//                    {
-//                        InlineData = new Blob
-//                        {
-//                            MimeType = mimeType,
-//                            Data = ByteString.CopyFrom(fileBytes) // Gửi nội dung file
-//                        }
-//                    }
-//                }
-//            };
+                // Tạo nội dung gửi đi (bao gồm Text và File Base64)
+                // Mscc hỗ trợ rất đơn giản, không cần Protobuf phức tạp
+                var request = new GenerateContentRequest
+                {
+                    Contents = new List<Content>
+                    {
+                        new Content
+                        {
+                            Parts = new List<IPart>
+                            {
+                                new TextData { Text = textPrompt },
+                                new InlineData { MimeType = mimeType, Data = Convert.ToBase64String(fileBytes) }
+                            }
+                        }
+                    }
+                };
 
-//            var request = new GenerateContentRequest
-//            {
-//                Model = _model,
-//                Contents = { content }
-//            };
+                var response = await model.GenerateContent(request);
+                return response.Text;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi gọi Gemini API");
+                return $"Lỗi hệ thống AI: {ex.Message}";
+            }
+        }
 
-//            // BƯỚC 3: GỌI API
-//            GenerateContentResponse response = await _client.GenerateContentAsync(request);
+        // 2. Chat / Chỉ văn bản
+        public async Task<string> GenerateTextOnlyAsync(string textPrompt)
+        {
+            try
+            {
+                var model = _googleAi.GenerativeModel(model: _modelName);
+                var response = await model.GenerateContent(textPrompt);
+                return response.Text;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi gọi Gemini API (Text only)");
+                return "AI đang bận, vui lòng thử lại sau.";
+            }
+        }
 
-//            // BƯỚC 4: Đọc kết quả
-//            return ParseResponse(response);
-//        }
+        // 3. Tạo Embedding (Vector) - Để dành cho tính năng Matching sau này
+        public async Task<float[]> GetEmbeddingAsync(string text)
+        {
+            try
+            {
+                var model = _googleAi.GenerativeModel(model: "text-embedding-004");
+                var response = await model.EmbedContent(text);
 
-//        // === HÀM 2: CHỈ VĂN BẢN (CHO CHATBOT) ===
-//        public async Task<string> GenerateTextOnlyAsync(string textPrompt)
-//        {
-//            var content = new Content { Parts = { new Part { Text = textPrompt } } };
-
-//            var request = new GenerateContentRequest
-//            {
-//                Model = _model,
-//                Contents = { content }
-//            };
-
-//            GenerateContentResponse response = await _client.GenerateContentAsync(request);
-//            return ParseResponse(response);
-//        }
-
-//        // Helper (Tách ra để tái sử dụng)
-//        private string ParseResponse(GenerateContentResponse response)
-//        {
-//            try
-//            {
-//                // Cấu trúc response của AI Studio đơn giản hơn
-//                return response.Candidates.First().Content.Parts.First().Text;
-//            }
-//            catch (Exception ex)
-//            {
-//                _logger.LogError(ex, "Lỗi khi đọc phản hồi từ AI Studio. Response: {Response}", response.ToString());
-//                // Trả về thông báo (nếu AI từ chối, v.v.)
-//                return $"Lỗi khi đọc phản hồi từ AI: {response.PromptFeedback?.BlockReason.ToString() ?? ex.Message}";
-//            }
-//        }
-//    }
-
-//    // XÓA BỎ class 'PartExtensions' (không cần thiết cho thư viện này)
-//}
+                if (response.Embedding != null && response.Embedding.Values != null)
+                {
+                    return response.Embedding.Values.ToArray();
+                }
+                return Array.Empty<float>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi tạo Embedding");
+                return Array.Empty<float>();
+            }
+        }
+    }
+}
