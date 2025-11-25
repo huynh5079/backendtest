@@ -32,6 +32,21 @@ namespace DataLayer.Repositories.Schedule
             return Task.CompletedTask;
             // KHÔNG GỌI SaveChangesAsync()
         }
-    }
 
+        public async Task<ScheduleEntry?> GetTutorConflictAsync(string tutorProfileId, DateTime startTime, DateTime endTime, string? entryIdToIgnore = null)
+        {
+            var query = _dbSet.AsNoTracking()
+                .Where(se => se.TutorId == tutorProfileId &&
+                             se.StartTime < endTime &&
+                             se.EndTime > startTime &&
+                             se.DeletedAt == null);
+
+            if (!string.IsNullOrEmpty(entryIdToIgnore))
+            {
+                query = query.Where(se => se.Id != entryIdToIgnore);
+            }
+
+            return await query.FirstOrDefaultAsync();
+        }
+    }
 }

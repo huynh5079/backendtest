@@ -42,5 +42,7 @@ public partial class Class : BaseEntity
 
     public virtual ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
 
+    public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
+
     public virtual TutorProfile? Tutor { get; set; }
 }

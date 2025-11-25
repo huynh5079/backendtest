@@ -53,5 +53,78 @@ namespace DataLayer.Repositories.Schedule
                              && studentProfileIds.Contains(ca.StudentId) // Kiểm tra xem có bất kỳ ID con nào trong danh sách
                              && ca.ApprovalStatus == ApprovalStatus.Approved);
         }
+
+        public async Task<List<User>> GetParticipantsInClassAsync(string classId)
+        {
+            // Lấy tất cả Student User
+            var studentUsers = await _dbSet
+                .Where(ca => ca.ClassId == classId &&
+                             ca.ApprovalStatus == ApprovalStatus.Approved &&
+                             ca.Student != null &&
+                             ca.Student.User != null)
+                .Select(ca => ca.Student!.User!)
+                .ToListAsync();
+
+            // Lấy tất cả Parent User
+            var parentUsers = await _dbSet
+                .Where(ca => ca.ClassId == classId &&
+                             ca.ApprovalStatus == ApprovalStatus.Approved &&
+                             ca.Student != null)
+                .SelectMany(ca => ca.Student!.ParentProfiles.Select(pp => pp.User)) // Join qua Student -> ParentProfile -> User
+                .Where(user => user != null)
+                .ToListAsync();
+
+            // Gộp 2 danh sách và loại bỏ trùng lặp
+            return studentUsers.Concat(parentUsers).DistinctBy(u => u.Id).ToList();
+        }
+
+        public async Task<List<ClassAssign>> GetByStudentIdAsync(string studentProfileId, bool includeClass = false)
+        {
+            IQueryable<ClassAssign> query = _dbSet
+                .AsNoTracking()
+                .Where(ca => ca.StudentId == studentProfileId);
+
+            if (includeClass)
+            {
+                query = query.Include(ca => ca.Class)
+                             .ThenInclude(c => c!.Tutor)
+                             .ThenInclude(t => t!.User);
+            }
+
+            return await query.OrderByDescending(ca => ca.EnrolledAt ?? ca.CreatedAt)
+                             .ToListAsync();
+        }
+
+        public async Task<ClassAssign?> GetByClassAndStudentAsync(string classId, string studentProfileId, bool includeClass = false)
+        {
+            IQueryable<ClassAssign> query = _dbSet
+                .AsNoTracking()
+                .Where(ca => ca.ClassId == classId && ca.StudentId == studentProfileId);
+
+            if (includeClass)
+            {
+                query = query.Include(ca => ca.Class)
+                             .ThenInclude(c => c!.Tutor)
+                             .ThenInclude(t => t!.User);
+            }
+
+            return await query.FirstOrDefaultAsync();
+        }
+
+        public async Task<List<ClassAssign>> GetByClassIdAsync(string classId, bool includeStudent = false)
+        {
+            IQueryable<ClassAssign> query = _dbSet
+                .AsNoTracking()
+                .Where(ca => ca.ClassId == classId);
+
+            if (includeStudent)
+            {
+                query = query.Include(ca => ca.Student)
+                             .ThenInclude(s => s!.User);
+            }
+
+            return await query.OrderByDescending(ca => ca.EnrolledAt ?? ca.CreatedAt)
+                             .ToListAsync();
+        }
     }
 }

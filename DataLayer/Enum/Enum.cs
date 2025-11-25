@@ -172,14 +172,19 @@ namespace DataLayer.Enum
         SystemAnnouncement, // Thông báo chung từ hệ thống
 
         // Wallet & Escrow flow
-        WalletDeposit,      // Nạp tiền thành công
-        WalletWithdraw,     // Rút tiền thành công
-        WalletTransferIn,   // Nhận chuyển tiền
-        WalletTransferOut,  // Chuyển tiền đi
-        EscrowPaid,         // Đã thanh toán escrow
-        EscrowReleased,     // Escrow đã được giải ngân (cho tutor)
-        EscrowRefunded,     // Escrow đã được hoàn tiền (cho payer)
-        PayoutReceived      // Nhận thanh toán từ escrow (cho tutor)
+        WalletDeposit,            // Nạp tiền thành công
+        WalletWithdraw,           // Rút tiền thành công
+        WalletTransferIn,         // Nhận chuyển tiền
+        WalletTransferOut,        // Chuyển tiền đi
+        EscrowPaid,               // Đã thanh toán escrow
+        EscrowReleased,           // Escrow đã được giải ngân (cho tutor)
+        EscrowRefunded,           // Escrow đã được hoàn tiền (cho payer)
+        PayoutReceived,           // Nhận thanh toán từ escrow (cho tutor)
+
+        // Reschedule Lessons
+        LessonRescheduleRequest,  // Gửi cho Student/Parent khi có yêu cầu mới
+        LessonRescheduleAccepted, // Gửi cho Tutor khi được chấp nhận
+        LessonRescheduleRejected  // Gửi cho Tutor khi bị từ chối
     }
 
     // Notification Status
@@ -196,5 +201,13 @@ namespace DataLayer.Enum
         Resolved,   // Đã xử lý (ẩn/xoá tài liệu, nhắc nhở…)
         Rejected,   // Từ chối report (không hợp lệ)
         Escalated   // Chuyển cấp cao hơn/Admin
+    }
+
+    public enum RescheduleStatus
+    {
+        Pending,
+        Accepted,
+        Rejected,
+        Cancelled // (Tùy chọn: nếu Tutor muốn hủy yêu cầu)
     }
 }

@@ -1,135 +1,120 @@
-﻿using Google.Cloud.AIPlatform.V1;
-using BusinessLayer.Service.Interface;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
+﻿//using BusinessLayer.Service.Interface;
+//using Google.Ai.Generativelanguage.V1Beta; // <-- Thư viện mới
+//using Microsoft.Extensions.Configuration; // Cần để đọc appsettings.json
+//using Microsoft.Extensions.Logging;
+//using System;
+//using System.Collections.Generic;
+//using System.Linq;
+//using System.Net.Http; // Cần để tải file từ Cloudinary
+//using System.Reflection.Metadata;
+//using System.Threading.Tasks;
 
-namespace BusinessLayer.Service
-{
-    public class AiAnalysisService : IAiAnalysisService
-    {
-        private readonly PredictionServiceClient _client;
-        private readonly string _projectId = "tpedu-ai-project";
-        private readonly string _location = "asia-southeast1";
-        private readonly string _model = "gemini-1.5-pro-preview-0409";
+//namespace BusinessLayer.Service
+//{
+//    public class AiAnalysisService : IAiAnalysisService
+//    {
+//        private readonly string _apiKey;
+//        private readonly GenerativeServiceClient _client;
+//        private readonly IHttpClientFactory _httpClientFactory;
+//        private readonly ILogger<AiAnalysisService> _logger;
+//        private readonly string _model = "models/gemini-1.5-pro-preview-0409"; // Tên model của AI Studio
 
-        public AiAnalysisService()
-        {
-            string endpoint = $"{_location}-aiplatform.googleapis.com";
-            var clientBuilder = new PredictionServiceClientBuilder
-            {
-                Endpoint = endpoint
-            };
-            _client = clientBuilder.Build();
-        }
+//        public AiAnalysisService(IConfiguration configuration, IHttpClientFactory httpClientFactory, ILogger<AiAnalysisService> logger)
+//        {
+//            _apiKey = configuration["GoogleAiStudio:ApiKey"]
+//                      ?? throw new ArgumentNullException("GoogleAiStudio:ApiKey not found in appsettings.json");
 
-        // === HÀM 1: PHÂN TÍCH FILE ===
-        public async Task<string> AnalyzeFileAsync(string textPrompt, string fileUrl, string mimeType)
-        {
-            var promptParts = new List<Part>
-            {
-                new Part { Text = textPrompt },
-                new Part
-                {
-                    FileData = new FileData
-                    {
-                        MimeType = mimeType,
-                        FileUri = fileUrl
-                    }
-                }
-            };
+//            // Tạo client mới
+//            _client = new GenerativeServiceClientBuilder
+//            {
+//                ApiKey = _apiKey
+//            }.Build();
 
-            var request = BuildRequest(promptParts);
-            PredictResponse response = await _client.PredictAsync(request);
-            return ParseResponse(response);
-        }
+//            _httpClientFactory = httpClientFactory;
+//            _logger = logger;
+//        }
 
-        // === HÀM 2: CHỈ VĂN BẢN (CHO CHATBOT) ===
-        public async Task<string> GenerateTextOnlyAsync(string textPrompt)
-        {
-            var promptParts = new List<Part>
-            {
-                new Part { Text = textPrompt }
-            };
+//        // === HÀM 1: PHÂN TÍCH FILE (ĐÃ NÂNG CẤP) ===
+//        public async Task<string> AnalyzeFileAsync(string textPrompt, string fileUrl, string mimeType)
+//        {
+//            _logger.LogInformation("Bắt đầu tải file từ URL: {FileUrl}", fileUrl);
 
-            var request = BuildRequest(promptParts);
-            PredictResponse response = await _client.PredictAsync(request);
-            return ParseResponse(response);
-        }
+//            // BƯỚC 1: Tải file từ Cloudinary (hoặc URL bất kỳ) về server
+//            byte[] fileBytes;
+//            try
+//            {
+//                var http = _httpClientFactory.CreateClient();
+//                fileBytes = await http.GetByteArrayAsync(fileUrl);
+//            }
+//            catch (Exception ex)
+//            {
+//                _logger.LogError(ex, "Không thể tải file từ {FileUrl}", fileUrl);
+//                return $"Lỗi: Không thể tải file từ URL để phân tích.";
+//            }
 
-        // === HELPER 1: XÂY DỰNG REQUEST (DÙNG CHUNG) ===
-        private PredictRequest BuildRequest(List<Part> promptParts)
-        {
-            // 4.1. Tạo list các Value từ promptParts
-            var partsValues = promptParts.Select(p => p.ToValue()).ToList();
+//            _logger.LogInformation("Tải file thành công, kích thước: {Size} bytes. Gửi cho AI...", fileBytes.Length);
 
-            // 4.2. Tạo 'content' struct
-            var contentStruct = new Google.Protobuf.WellKnownTypes.Struct();
-            var partsListValue = new Google.Protobuf.WellKnownTypes.Value
-            {
-                ListValue = new Google.Protobuf.WellKnownTypes.ListValue()
-            };
-            partsListValue.ListValue.Values.AddRange(partsValues);
-            contentStruct.Fields.Add("parts", partsListValue);
+//            // BƯỚC 2: Xây dựng prompt (gửi nội dung file, không phải URL)
+//            var content = new Content
+//            {
+//                Parts =
+//                {
+//                    new Part { Text = textPrompt },
+//                    new Part
+//                    {
+//                        InlineData = new Blob
+//                        {
+//                            MimeType = mimeType,
+//                            Data = ByteString.CopyFrom(fileBytes) // Gửi nội dung file
+//                        }
+//                    }
+//                }
+//            };
 
-            // 4.3. Tạo 'instance' struct
-            var instanceStruct = new Google.Protobuf.WellKnownTypes.Struct();
-            instanceStruct.Fields.Add("content", Google.Protobuf.WellKnownTypes.Value.ForStruct(contentStruct));
+//            var request = new GenerateContentRequest
+//            {
+//                Model = _model,
+//                Contents = { content }
+//            };
 
-            // 4.4. Tạo 'instance' Value
-            var instanceValue = Google.Protobuf.WellKnownTypes.Value.ForStruct(instanceStruct);
+//            // BƯỚC 3: GỌI API
+//            GenerateContentResponse response = await _client.GenerateContentAsync(request);
 
-            // 4.5. Tạo request
-            var request = new PredictRequest
-            {
-                Endpoint = EndpointName.FromProjectLocationPublisherModel(
-                    _projectId, _location, "google", _model
-                ).ToString(),
-            };
+//            // BƯỚC 4: Đọc kết quả
+//            return ParseResponse(response);
+//        }
 
-            request.Instances.Add(instanceValue);
+//        // === HÀM 2: CHỈ VĂN BẢN (CHO CHATBOT) ===
+//        public async Task<string> GenerateTextOnlyAsync(string textPrompt)
+//        {
+//            var content = new Content { Parts = { new Part { Text = textPrompt } } };
 
-            return request;
-        }
+//            var request = new GenerateContentRequest
+//            {
+//                Model = _model,
+//                Contents = { content }
+//            };
 
-        // === HELPER 2: ĐỌC KẾT QUẢ (DÙNG CHUNG) ===
-        private string ParseResponse(PredictResponse response)
-        {
-            try
-            {
-                var prediction = response.Predictions.First();
-                var candidate = prediction.StructValue.Fields["candidates"].ListValue.Values[0];
-                var content = candidate.StructValue.Fields["content"].StructValue;
-                var textResponse = content.Fields["parts"].ListValue.Values[0].StructValue.Fields["text"].StringValue;
-                return textResponse;
-            }
-            catch (System.Exception ex)
-            {
-                return $"Lỗi khi đọc phản hồi từ AI: {ex.Message}";
-            }
-        }
-    }
+//            GenerateContentResponse response = await _client.GenerateContentAsync(request);
+//            return ParseResponse(response);
+//        }
 
-    // Helper class (Giữ nguyên)
-    public static class PartExtensions
-    {
-        public static Google.Protobuf.WellKnownTypes.Value ToValue(this Part part)
-        {
-            var s = new Google.Protobuf.WellKnownTypes.Struct();
-            if (part.Text != null)
-                s.Fields.Add("text", Google.Protobuf.WellKnownTypes.Value.ForString(part.Text));
+//        // Helper (Tách ra để tái sử dụng)
+//        private string ParseResponse(GenerateContentResponse response)
+//        {
+//            try
+//            {
+//                // Cấu trúc response của AI Studio đơn giản hơn
+//                return response.Candidates.First().Content.Parts.First().Text;
+//            }
+//            catch (Exception ex)
+//            {
+//                _logger.LogError(ex, "Lỗi khi đọc phản hồi từ AI Studio. Response: {Response}", response.ToString());
+//                // Trả về thông báo (nếu AI từ chối, v.v.)
+//                return $"Lỗi khi đọc phản hồi từ AI: {response.PromptFeedback?.BlockReason.ToString() ?? ex.Message}";
+//            }
+//        }
+//    }
 
-            if (part.FileData != null)
-                s.Fields.Add("file_data", Google.Protobuf.WellKnownTypes.Value.ForStruct(new Google.Protobuf.WellKnownTypes.Struct
-                {
-                    Fields =
-                    {
-                        { "mime_type", Google.Protobuf.WellKnownTypes.Value.ForString(part.FileData.MimeType) },
-                        { "file_uri", Google.Protobuf.WellKnownTypes.Value.ForString(part.FileData.FileUri) }
-                    }
-                }));
-
-            return Google.Protobuf.WellKnownTypes.Value.ForStruct(s);
-        }
-    }
-}
+//    // XÓA BỎ class 'PartExtensions' (không cần thiết cho thư viện này)
+//}

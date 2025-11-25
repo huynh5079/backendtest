@@ -1,4 +1,5 @@
 ﻿using BusinessLayer.DTOs.Schedule.Class;
+using BusinessLayer.DTOs.Schedule.ClassAssign;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
@@ -17,17 +18,20 @@ namespace BusinessLayer.Service.ScheduleService
         private readonly TpeduContext _context;
         private readonly IScheduleUnitOfWork _uow;
         private readonly IStudentProfileService _studentProfileService;
+        private readonly ITutorProfileService _tutorProfileService;
         private readonly IScheduleGenerationService _scheduleGenerationService;
 
         public AssignService(
             TpeduContext context,
             IScheduleUnitOfWork uow,
             IStudentProfileService studentProfileService,
+            ITutorProfileService tutorProfileService,
             IScheduleGenerationService scheduleGenerationService)
         {
             _context = context;
             _uow = uow;
             _studentProfileService = studentProfileService;
+            _tutorProfileService = tutorProfileService;
             _scheduleGenerationService = scheduleGenerationService;
         }
 
@@ -213,6 +217,144 @@ namespace BusinessLayer.Service.ScheduleService
             });
 
             return true;
+        }
+
+        public async Task<List<MyEnrolledClassesDto>> GetMyEnrolledClassesAsync(string studentUserId)
+        {
+            var studentProfileId = await _studentProfileService.GetStudentProfileIdByUserIdAsync(studentUserId);
+            if (studentProfileId == null)
+                throw new UnauthorizedAccessException("Tài khoản học sinh không hợp lệ.");
+
+            var classAssigns = await _uow.ClassAssigns.GetByStudentIdAsync(studentProfileId, includeClass: true);
+
+            return classAssigns.Select(ca => new MyEnrolledClassesDto
+            {
+                ClassId = ca.ClassId ?? string.Empty,
+                ClassTitle = ca.Class?.Title ?? "N/A",
+                Subject = ca.Class?.Subject,
+                EducationLevel = ca.Class?.EducationLevel,
+                TutorName = ca.Class?.Tutor?.User?.UserName ?? "N/A",
+                Price = ca.Class?.Price ?? 0,
+                ClassStatus = ca.Class?.Status ?? ClassStatus.Pending,
+                ApprovalStatus = ca.ApprovalStatus,
+                PaymentStatus = ca.PaymentStatus,
+                EnrolledAt = ca.EnrolledAt,
+                Location = ca.Class?.Location,
+                Mode = ca.Class?.Mode ?? ClassMode.Offline,
+                ClassStartDate = ca.Class?.ClassStartDate
+            }).ToList();
+        }
+
+        public async Task<EnrollmentCheckDto> CheckEnrollmentAsync(string studentUserId, string classId)
+        {
+            var studentProfileId = await _studentProfileService.GetStudentProfileIdByUserIdAsync(studentUserId);
+            if (studentProfileId == null)
+                throw new UnauthorizedAccessException("Tài khoản học sinh không hợp lệ.");
+
+            var isEnrolled = await _uow.ClassAssigns.IsApprovedAsync(classId, studentProfileId);
+
+            return new EnrollmentCheckDto
+            {
+                ClassId = classId,
+                IsEnrolled = isEnrolled
+            };
+        }
+
+        public async Task<List<StudentEnrollmentDto>> GetStudentsInClassAsync(string tutorUserId, string classId)
+        {
+            // Verify tutor owns the class
+            var tutorProfileId = await _tutorProfileService.GetTutorProfileIdByUserIdAsync(tutorUserId);
+            if (tutorProfileId == null)
+                throw new UnauthorizedAccessException("Tài khoản gia sư không hợp lệ.");
+
+            var targetClass = await _uow.Classes.GetByIdAsync(classId);
+            if (targetClass == null)
+                throw new KeyNotFoundException($"Không tìm thấy lớp học với ID '{classId}'.");
+
+            if (targetClass.TutorId != tutorProfileId)
+                throw new UnauthorizedAccessException("Bạn không có quyền xem học sinh của lớp học này.");
+
+            // Get all enrollments for this class
+            var classAssigns = await _uow.ClassAssigns.GetByClassIdAsync(classId, includeStudent: true);
+
+            return classAssigns.Select(ca => new StudentEnrollmentDto
+            {
+                StudentId = ca.StudentId ?? string.Empty,
+                StudentName = ca.Student?.User?.UserName ?? "N/A",
+                StudentEmail = ca.Student?.User?.Email,
+                StudentAvatarUrl = ca.Student?.User?.AvatarUrl,
+                StudentPhone = ca.Student?.User?.Phone,
+                ApprovalStatus = ca.ApprovalStatus,
+                PaymentStatus = ca.PaymentStatus,
+                EnrolledAt = ca.EnrolledAt,
+                CreatedAt = ca.CreatedAt
+            }).ToList();
+        }
+
+        public async Task<ClassAssignDetailDto> GetEnrollmentDetailAsync(string userId, string classId)
+        {
+            // Student/Parent can only view their own enrollment
+            var studentProfileId = await _studentProfileService.GetStudentProfileIdByUserIdAsync(userId);
+            if (studentProfileId == null)
+                throw new UnauthorizedAccessException("Tài khoản học sinh không hợp lệ.");
+
+            var classAssign = await _uow.ClassAssigns.GetByClassAndStudentAsync(classId, studentProfileId, includeClass: true);
+            if (classAssign == null)
+                throw new KeyNotFoundException("Bạn chưa ghi danh vào lớp học này.");
+
+            return new ClassAssignDetailDto
+            {
+                ClassAssignId = classAssign.Id,
+                ClassId = classAssign.ClassId ?? string.Empty,
+                ClassTitle = classAssign.Class?.Title ?? "N/A",
+                ClassDescription = classAssign.Class?.Description,
+                ClassSubject = classAssign.Class?.Subject,
+                ClassEducationLevel = classAssign.Class?.EducationLevel,
+                ClassPrice = classAssign.Class?.Price ?? 0,
+                ClassStatus = classAssign.Class?.Status ?? ClassStatus.Pending,
+                StudentId = classAssign.StudentId ?? string.Empty,
+                StudentName = classAssign.Student?.User?.UserName ?? "N/A",
+                StudentEmail = classAssign.Student?.User?.Email,
+                StudentPhone = classAssign.Student?.User?.Phone,
+                StudentAvatarUrl = classAssign.Student?.User?.AvatarUrl,
+                ApprovalStatus = classAssign.ApprovalStatus,
+                PaymentStatus = classAssign.PaymentStatus,
+                EnrolledAt = classAssign.EnrolledAt,
+                CreatedAt = classAssign.CreatedAt,
+                UpdatedAt = classAssign.UpdatedAt
+            };
+        }
+
+        public async Task<List<TutorStudentDto>> GetStudentsByTutorAsync(string tutorUserId)
+        {
+            var tutorProfileId = await _tutorProfileService.GetTutorProfileIdByUserIdAsync(tutorUserId);
+            if (tutorProfileId == null)
+                throw new UnauthorizedAccessException("Tài khoản gia sư không hợp lệ.");
+
+            // Lấy tất cả ClassAssign thuộc về các lớp của Tutor này
+            // Điều kiện: Lớp của Tutor && Học sinh đã được Approved
+            var assigns = await _uow.ClassAssigns.GetAllAsync(
+                filter: ca => ca.Class != null &&
+                              ca.Class.TutorId == tutorProfileId &&
+                              ca.ApprovalStatus == ApprovalStatus.Approved,
+                includes: q => q.Include(ca => ca.Class)
+                                .Include(ca => ca.Student).ThenInclude(s => s!.User)
+            );
+
+            return assigns.Select(ca => new TutorStudentDto
+            {
+                StudentId = ca.StudentId!,
+                StudentUserId = ca.Student?.UserId ?? "",
+                StudentName = ca.Student?.User?.UserName ?? "N/A",
+                StudentEmail = ca.Student?.User?.Email,
+                StudentPhone = ca.Student?.User?.Phone,
+                StudentAvatarUrl = ca.Student?.User?.AvatarUrl,
+
+                ClassId = ca.ClassId!,
+                ClassTitle = ca.Class?.Title ?? "N/A",
+                StudentLimit = ca.Class?.StudentLimit ?? 0,
+                JoinedAt = ca.EnrolledAt ?? ca.CreatedAt
+            }).ToList();
         }
 
         // --- Helper ---

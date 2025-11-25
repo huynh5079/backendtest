@@ -21,12 +21,11 @@ public class AuthService : IAuthService
     private readonly IOtpService _otp;
     private readonly IFileStorageService _storage;
     private readonly IMediaService _media;
-    private readonly IAiAnalysisService _aiAnalysisService;
 
     private const int StudentMinAge = 15;
     private const int TutorMinAge = 18;
 
-    public AuthService(TpeduContext db, ITokenService token, IUnitOfWork uow, IOtpService otp, IFileStorageService storage, IMediaService media, IAiAnalysisService aiAnalysisService)
+    public AuthService(TpeduContext db, ITokenService token, IUnitOfWork uow, IOtpService otp, IFileStorageService storage, IMediaService media)
     {
         _db = db; 
         _token = token; 
@@ -34,7 +33,6 @@ public class AuthService : IAuthService
         _otp = otp; 
         _storage = storage; 
         _media = media;
-        _aiAnalysisService = aiAnalysisService;
     }
 
     public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto dto)
@@ -244,41 +242,6 @@ public class AuthService : IAuthService
             {
                 var ups = await _storage.UploadManyAsync(req.CertificateFiles, UploadContext.Certificate, user.Id);
                 await _media.SaveTutorCertificatesAsync(user.Id, tutor.Id, ups);
-            }
-
-            // Add AI analysis
-            if (req.CertificateFiles is { Count: > 0 })
-            {
-                // 1. Tải file lên Cloudinary như bình thường
-                var ups = await _storage.UploadManyAsync(req.CertificateFiles, UploadContext.Certificate, user.Id);
-                await _media.SaveTutorCertificatesAsync(user.Id, tutor.Id, ups);
-
-                //// 2. GỌI AI ĐỂ KIỂM TRA TỪNG FILE
-                //foreach (var up in ups)
-                //{
-                //    string context = $"Kiểm tra chứng chỉ giảng dạy. Môn học đăng ký: {tutor.TeachingSubjects}.";
-
-                //    // !! GỌI AI !!
-                //    string analysisResult = await _aiAnalysisService.AnalyzeFileRelevanceAsync(
-                //        context,
-                //        up.Url,         // URL từ Cloudinary
-                //        up.ContentType  // MimeType từ file
-                //    );
-
-                //    // 3. Hành động (ví dụ: tạo Report nếu AI phát hiện)
-                //    if (analysisResult.ToUpper().Contains("KHÔNG LIÊN QUAN") ||
-                //        analysisResult.ToUpper().Contains("GIẢ MẠO"))
-                //    {
-                //        var report = new Report
-                //        {
-                //            ReporterId = "system-ai", // Hoặc Admin
-                //            TargetUserId = user.Id,
-                //            Description = $"[AI Tự động] Chứng chỉ tải lên (File: {up.FileName}) bị nghi ngờ không liên quan. Phân tích: {analysisResult}",
-                //            Status = ReportStatus.Pending
-                //        };
-                //        await _uow.Reports.CreateAsync(report); // (Bạn cần thêm IReportRepository vào UoW)
-                //    }
-                //}
             }
 
             await _uow.SaveChangesAsync();

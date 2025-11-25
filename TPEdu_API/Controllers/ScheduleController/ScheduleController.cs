@@ -27,7 +27,8 @@ namespace TPEdu_API.Controllers.ScheduleController
             string tutorId, 
             [FromQuery] DateTime startDate, 
             [FromQuery] DateTime endDate,
-            [FromQuery] string? entryType)
+            [FromQuery] string? entryType,
+            [FromQuery] string? classId)
         {
             if (endDate < startDate)
             {
@@ -36,7 +37,7 @@ namespace TPEdu_API.Controllers.ScheduleController
 
             try
             {
-                var schedule = await _scheduleViewService.GetTutorScheduleAsync(tutorId, startDate, endDate, entryType);
+                var schedule = await _scheduleViewService.GetTutorScheduleAsync(tutorId, startDate, endDate, entryType, classId);
                 return Ok(ApiResponse<IEnumerable<ScheduleEntryDto>>.Ok(schedule));
             }
             catch (Exception ex)

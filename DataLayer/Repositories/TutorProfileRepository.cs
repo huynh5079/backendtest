@@ -156,5 +156,11 @@ namespace DataLayer.Repositories
                                  .FirstOrDefaultAsync();
             return tp;
         }
+
+        public async Task<string?> GetIdByUserIdAsync(string userId)
+        => await _dbSet.AsNoTracking()
+                       .Where(t => t.UserId == userId)
+                       .Select(t => t.Id)
+                       .FirstOrDefaultAsync();
     }
 }

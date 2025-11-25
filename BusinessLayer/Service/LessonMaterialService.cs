@@ -7,7 +7,6 @@ using DataLayer.Repositories.Abstraction;
 using DataLayer.Repositories.Abstraction.Schedule;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,15 +19,11 @@ namespace BusinessLayer.Service
     {
         private readonly IUnitOfWork _uow;
         private readonly IFileStorageService _storage;
-        private readonly IAiAnalysisService _aiAnalysisService; 
-        private readonly ILogger<LessonMaterialService> _logger; 
 
-        public LessonMaterialService(IUnitOfWork uow, IFileStorageService storage, IAiAnalysisService aiAnalysisService, ILogger<LessonMaterialService> logger)
+        public LessonMaterialService(IUnitOfWork uow, IFileStorageService storage)
         {
             _uow = uow;
             _storage = storage;
-            _aiAnalysisService = aiAnalysisService;
-            _logger = logger;
         }
 
         private static MaterialItemDto Map(Media m) => new()
@@ -120,46 +115,6 @@ namespace BusinessLayer.Service
                 };
                 await _uow.Media.CreateAsync(m);
                 list.Add(m);
-
-                try
-                {
-                    string context = $"Chủ đề Lớp: {cls.Title}. Chủ đề Bài học: {lesson.Title}.";
-
-                    // TẠO PROMPT KIỂM DUYỆT
-                    string moderationPrompt = $"Bạn là trợ lý kiểm duyệt. Hãy phân tích file sau đây. Chủ đề yêu cầu là: '{context}'. " +
-                                              "Nội dung file có liên quan đến chủ đề này không? File có chứa nội dung nhạy cảm (var) không? Trả lời ngắn gọn.";
-
-                    // Gọi AI Service (SỬA TÊN HÀM Ở ĐÂY)
-                    _logger.LogInformation("Bắt đầu phân tích AI cho file: {FileName}", up.FileName);
-                    string analysisResult = await _aiAnalysisService.AnalyzeFileAsync(
-                        moderationPrompt,
-                        up.Url,
-                        up.ContentType
-                    );
-                    _logger.LogInformation("Kết quả phân tích AI cho {FileName}: {Result}", up.FileName, analysisResult);
-
-                    // Xử lý kết quả (Tự động tạo Report nếu vi phạm)
-                    if (analysisResult.ToUpper().Contains("KHÔNG LIÊN QUAN") ||
-                        analysisResult.ToUpper().Contains("NHẠY CẢM") ||
-                        analysisResult.ToUpper().Contains("SAI CHỦ ĐỀ"))
-                    {
-                        var report = new Report
-                        {
-                            ReporterId = "system-ai",
-                            TargetUserId = tutorUserIdOfClass,
-                            TargetLessonId = lessonId,
-                            TargetMediaId = m.Id,
-                            Description = $"[AI Tự động] File tài liệu '{up.FileName}' bị nghi ngờ. Lý do: {analysisResult}",
-                            Status = ReportStatus.Pending
-                        };
-                        await _uow.Reports.CreateAsync(report);
-                        _logger.LogWarning("AI đã tạo Report cho file {FileName} (MediaId: {MediaId})", up.FileName, m.Id);
-                    }
-                }
-                catch (Exception aiEx)
-                {
-                    _logger.LogError(aiEx, "Lỗi phân tích AI khi upload tài liệu {FileName} cho lesson {LessonId}", up.FileName, lessonId);
-                }
             }
             await _uow.SaveChangesAsync();
             return list.Select(Map).ToList();
@@ -181,7 +136,7 @@ namespace BusinessLayer.Service
                 {
                     FileUrl = url,
                     FileName = string.IsNullOrWhiteSpace(title) ? "Link" : title!,
-                    MediaType = "link/url",
+                    MediaType = DetectLinkType(url),
                     FileSize = 0,
                     OwnerUserId = tutorUserId,
                     Context = UploadContext.Material,
@@ -215,6 +170,27 @@ namespace BusinessLayer.Service
             await _uow.Media.UpdateAsync(media);
             await _uow.SaveChangesAsync();
             return true;
+        }
+
+        /// <summary>
+        /// (Helper) Phân loại link (để UI biết cách hiển thị)
+        /// </summary>
+        private static string DetectLinkType(string url)
+        {
+            try
+            {
+                var uri = new Uri(url);
+                if (uri.Host.Contains("youtube.com") || uri.Host.Contains("youtu.be"))
+                    return "link/youtube";
+                if (uri.Host.Contains("drive.google.com"))
+                    return "link/googledrive";
+
+                return "link/url"; // Link chung
+            }
+            catch
+            {
+                return "link/url"; // Fallback nếu URL không hợp lệ (dù đã check)
+            }
         }
     }
 }

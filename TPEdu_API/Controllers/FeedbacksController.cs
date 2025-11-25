@@ -15,7 +15,9 @@ namespace TPEdu_API.Controllers
         private readonly IFeedbackService _service;
         public FeedbacksController(IFeedbackService service) => _service = service;
 
-        // (1) Tạo feedback cho BUỔI HỌC (lesson-only)
+        /// <summary>
+        /// (1) Tạo feedback cho BUỔI HỌC (lesson-only)
+        /// </summary>
         [HttpPost]
         [Authorize] // Tutor/Student/Parent
         public async Task<IActionResult> Create([FromBody] CreateFeedbackRequest req)
@@ -35,10 +37,14 @@ namespace TPEdu_API.Controllers
             }
         }
 
-        // (2) Tạo feedback CÔNG KHAI trên TRANG TUTOR (không gắn lesson)
+        /// <summary>
+        /// (2) Tạo feedback CÔNG KHAI trên TRANG TUTOR (không gắn lesson)
+        /// </summary>
         [HttpPost("tutors/{tutorUserId}")]
         [Authorize]
-        public async Task<IActionResult> CreateForTutorProfile(string tutorUserId, [FromBody] CreateTutorProfileFeedbackRequest req)
+        public async Task<IActionResult> CreateForTutorProfile(
+            [FromRoute] string tutorUserId,
+            [FromBody] CreateTutorProfileFeedbackRequest req)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ApiResponse<FeedbackDto>.Fail("Dữ liệu không hợp lệ"));
@@ -55,9 +61,14 @@ namespace TPEdu_API.Controllers
             }
         }
 
+        /// <summary>
+        /// (3) Cập nhật feedback (lesson hoặc public tuỳ theo feedbackId)
+        /// </summary>
         [HttpPut("{feedbackId}")]
         [Authorize]
-        public async Task<IActionResult> Update(string feedbackId, [FromBody] UpdateFeedbackRequest req)
+        public async Task<IActionResult> Update(
+            [FromRoute] string feedbackId,
+            [FromBody] UpdateFeedbackRequest req)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ApiResponse<FeedbackDto>.Fail("Dữ liệu không hợp lệ"));
@@ -74,16 +85,16 @@ namespace TPEdu_API.Controllers
             }
         }
 
-        // Update/Delete giữ nguyên…
-
-        // (3) List theo BUỔI HỌC (hiển thị lesson-only)
-        [HttpGet("lesson/{lessonId}")]
+        /// <summary>
+        /// (4) List feedback theo LỚP HỌC (class-only hiển thị ở trang lớp/buổi học)
+        /// </summary>
+        [HttpGet("lesson/{classId}")]
         [Authorize]
-        public async Task<IActionResult> GetByLesson(string lessonId)
+        public async Task<IActionResult> GetByClass([FromRoute] string classId)
         {
             try
             {
-                var items = await _service.GetLessonFeedbacksAsync(lessonId);
+                var items = await _service.GetClassFeedbacksAsync(classId);
                 return Ok(ApiResponse<IEnumerable<FeedbackDto>>.Ok(items));
             }
             catch (Exception ex)
@@ -92,11 +103,15 @@ namespace TPEdu_API.Controllers
             }
         }
 
-        // (4) List trên TRANG TUTOR (chỉ các bài public)
+        /// <summary>
+        /// (5) List feedback PUBLIC trên TRANG TUTOR
+        /// </summary>
         [HttpGet("tutors/{tutorUserId}")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetByTutor(string tutorUserId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetByTutor(
+            [FromRoute] string tutorUserId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
@@ -123,10 +138,12 @@ namespace TPEdu_API.Controllers
             }
         }
 
-        // (5) Rating tổng hợp cho TUTOR
+        /// <summary>
+        /// (6) Rating tổng hợp cho TUTOR (dùng cho header / overview)
+        /// </summary>
         [HttpGet("tutors/{tutorUserId}/rating")]
         [AllowAnonymous]
-        public async Task<IActionResult> GetTutorRating(string tutorUserId)
+        public async Task<IActionResult> GetTutorRating([FromRoute] string tutorUserId)
         {
             try
             {
@@ -139,16 +156,21 @@ namespace TPEdu_API.Controllers
             }
         }
 
-        // (6) Xoá feedback
+        /// <summary>
+        /// (7) Xoá feedback
+        /// </summary>
         [HttpDelete("{feedbackId}")]
         [Authorize]
-        public async Task<IActionResult> Delete(string feedbackId)
+        public async Task<IActionResult> Delete([FromRoute] string feedbackId)
         {
             try
             {
                 var actorUserId = User.RequireUserId();
                 var ok = await _service.DeleteAsync(actorUserId, feedbackId);
-                if (ok) return Ok(ApiResponse<object>.Ok(new { success = true }, "Đã xoá feedback"));
+
+                if (ok)
+                    return Ok(ApiResponse<object>.Ok(new { success = true }, "Đã xoá feedback"));
+
                 return BadRequest(ApiResponse<object>.Fail("Xoá feedback thất bại"));
             }
             catch (Exception ex)

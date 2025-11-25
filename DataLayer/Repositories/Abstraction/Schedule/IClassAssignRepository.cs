@@ -12,5 +12,11 @@ namespace DataLayer.Repositories.Abstraction.Schedule
     {
         Task<bool> IsApprovedAsync(string classId, string studentProfileId);
         Task<bool> IsAnyChildApprovedAsync(string classId, List<string> studentProfileIds);
+        Task<List<User>> GetParticipantsInClassAsync(string classId);
+        
+        // New methods for enrollment management
+        Task<List<ClassAssign>> GetByStudentIdAsync(string studentProfileId, bool includeClass = false);
+        Task<ClassAssign?> GetByClassAndStudentAsync(string classId, string studentProfileId, bool includeClass = false);
+        Task<List<ClassAssign>> GetByClassIdAsync(string classId, bool includeStudent = false);
     }
 }

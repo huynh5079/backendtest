@@ -433,6 +433,9 @@ namespace DataLayer.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("ClassId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("Comment")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -466,10 +469,17 @@ namespace DataLayer.Migrations
                     b.HasKey("Id")
                         .HasName("PK__Feedback__6A4BEDD6F1A4F2BB");
 
+                    b.HasIndex("FromUserId", "ToUserId", "ClassId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_Feedback_From_To_Class")
+                        .HasFilter("[FromUserId] IS NOT NULL AND [ToUserId] IS NOT NULL AND [ClassId] IS NOT NULL");
+
                     b.HasIndex("FromUserId", "ToUserId", "LessonId")
                         .IsUnique()
                         .HasDatabaseName("UQ_Feedback_From_To_Lesson")
                         .HasFilter("[FromUserId] IS NOT NULL AND [ToUserId] IS NOT NULL AND [LessonId] IS NOT NULL");
+
+                    b.HasIndex(new[] { "ClassId" }, "IX_Feedback_ClassId");
 
                     b.HasIndex(new[] { "FromUserId" }, "IX_Feedback_FromUserId");
 
@@ -897,6 +907,72 @@ namespace DataLayer.Migrations
                     b.HasIndex(new[] { "TargetUserId" }, "IX_Report_TargetUserId");
 
                     b.ToTable("Report", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.RescheduleRequest", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LessonId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("NewEndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("NewStartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("OldEndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("OldStartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OriginalScheduleEntryId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RequesterUserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResponderUserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LessonId");
+
+                    b.HasIndex("OriginalScheduleEntryId");
+
+                    b.HasIndex("RequesterUserId");
+
+                    b.HasIndex("ResponderUserId");
+
+                    b.ToTable("RescheduleRequest", (string)null);
                 });
 
             modelBuilder.Entity("DataLayer.Entities.Role", b =>
@@ -1436,6 +1512,11 @@ namespace DataLayer.Migrations
 
             modelBuilder.Entity("DataLayer.Entities.Feedback", b =>
                 {
+                    b.HasOne("DataLayer.Entities.Class", "Class")
+                        .WithMany("Feedbacks")
+                        .HasForeignKey("ClassId")
+                        .HasConstraintName("FK__Feedback__Class__261B255A");
+
                     b.HasOne("DataLayer.Entities.User", "FromUser")
                         .WithMany("FeedbackFromUsers")
                         .HasForeignKey("FromUserId")
@@ -1450,6 +1531,8 @@ namespace DataLayer.Migrations
                         .WithMany("FeedbackToUsers")
                         .HasForeignKey("ToUserId")
                         .HasConstraintName("FK__Feedback__ToUser__14270015");
+
+                    b.Navigation("Class");
 
                     b.Navigation("FromUser");
 
@@ -1587,6 +1670,40 @@ namespace DataLayer.Migrations
                     b.Navigation("TargetUser");
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.RescheduleRequest", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Lesson", "Lesson")
+                        .WithMany()
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DataLayer.Entities.ScheduleEntry", "OriginalScheduleEntry")
+                        .WithMany()
+                        .HasForeignKey("OriginalScheduleEntryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DataLayer.Entities.User", "RequesterUser")
+                        .WithMany()
+                        .HasForeignKey("RequesterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DataLayer.Entities.User", "ResponderUser")
+                        .WithMany()
+                        .HasForeignKey("ResponderUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Lesson");
+
+                    b.Navigation("OriginalScheduleEntry");
+
+                    b.Navigation("RequesterUser");
+
+                    b.Navigation("ResponderUser");
+                });
+
             modelBuilder.Entity("DataLayer.Entities.ScheduleEntry", b =>
                 {
                     b.HasOne("DataLayer.Entities.AvailabilityBlock", "Block")
@@ -1694,6 +1811,8 @@ namespace DataLayer.Migrations
                     b.Navigation("ClassAssigns");
 
                     b.Navigation("ClassSchedules");
+
+                    b.Navigation("Feedbacks");
 
                     b.Navigation("LearningMaterials");
 

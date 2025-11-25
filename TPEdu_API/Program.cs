@@ -89,13 +89,14 @@ builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IEscrowService, EscrowService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<INotificationHubService, NotificationHubService>();
+builder.Services.AddScoped<IChatHubService, TPEdu_API.Services.ChatHubService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IMomoPaymentService, MomoPaymentService>();
 builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ILessonMaterialService, LessonMaterialService>();
 builder.Services.AddScoped<IReportService, ReportService>();
-builder.Services.AddSingleton<IAiAnalysisService, AiAnalysisService>();
-builder.Services.AddScoped<IChatbotService, ChatbotService>();
+
 // Schedule Transactions
 builder.Services.AddScoped<IAvailabilityBlockService, AvailabilityBlockService>();
 builder.Services.AddScoped<ITutorApplicationService, TutorApplicationService>();
@@ -105,6 +106,7 @@ builder.Services.AddScoped<IClassService, ClassService>();
 builder.Services.AddScoped<IScheduleViewService, ScheduleViewService>();
 builder.Services.AddScoped<IAssignService, AssignService>();
 builder.Services.AddScoped<IStudentProfileService, StudentProfileService>();
+builder.Services.AddScoped<ILessonRescheduleService, LessonRescheduleService>();
 
 // Exception Handler & ProblemDetails
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
@@ -128,8 +130,9 @@ builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
 builder.Services.AddScoped<IPaymentLogRepository, PaymentLogRepository>();
+builder.Services.AddScoped<IRescheduleRequestRepository, RescheduleRequestRepository>();
+builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-
 
 // Schedule Transactions
 builder.Services.AddScoped<IClassRequestRepository, ClassRequestRepository>();
@@ -194,7 +197,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var path = context.HttpContext.Request.Path;
 
                 // Chỉ lấy token từ SignalR hub endpoint
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/notificationhub"))
+                if (!string.IsNullOrEmpty(accessToken) && 
+                    (path.StartsWithSegments("/tpedu/v1/notificationhub") || 
+                     path.StartsWithSegments("/tpedu/v1/chathub")))
                 {
                     context.Token = accessToken;
                 }
@@ -229,6 +234,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Map SignalR Hub
-app.MapHub<TPEdu_API.Hubs.NotificationHub>("/notificationhub");
+app.MapHub<TPEdu_API.Hubs.NotificationHub>("/tpedu/v1/notificationhub");
+app.MapHub<TPEdu_API.Hubs.ChatHub>("/tpedu/v1/chathub");
 
 app.Run();

@@ -8,7 +8,7 @@ namespace BusinessLayer.DTOs.Feedback
 {
     public class CreateFeedbackRequest
     {
-        public string LessonId { get; set; } = default!;
+        public string ClassId { get; set; } = default!;
         public string ToUserId { get; set; } = default!;  // người nhận (VD: tutor hoặc student)
         public float? Rating { get; set; }                // 0..5 (nullable, cho phép chỉ comment)
         public string? Comment { get; set; }              // <= 1000 ký tự
@@ -31,7 +31,7 @@ namespace BusinessLayer.DTOs.Feedback
     {
         public string Id { get; set; } = default!;
 
-        public string LessonId { get; set; } = default!;
+        public string ClassId { get; set; } = default!;
         public string FromUserId { get; set; } = default!;
         public string FromUserName { get; set; } = default!;
         public string ToUserId { get; set; } = default!;

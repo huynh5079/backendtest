@@ -35,6 +35,8 @@ namespace DataLayer.Repositories
         public IClassAssignRepository ClassAssigns { get; }
         public IPaymentRepository Payments { get; }
         public IPaymentLogRepository PaymentLogs { get; }
+        public IRescheduleRequestRepository RescheduleRequests { get; }
+        public IMessageRepository Messages { get; }
 
         public UnitOfWork(TpeduContext ctx,
                           IUserRepository users,
@@ -55,7 +57,9 @@ namespace DataLayer.Repositories
                           ILessonRepository lessons,
                           IClassAssignRepository classAssigns,
                           IPaymentRepository payments,
-                          IPaymentLogRepository paymentLogs)
+                          IPaymentLogRepository paymentLogs,
+                          IRescheduleRequestRepository rescheduleRequests,
+                          IMessageRepository messages)
         {
             _ctx = ctx;
             Users = users;
@@ -77,6 +81,8 @@ namespace DataLayer.Repositories
             ClassAssigns = classAssigns;
             Payments = payments;
             PaymentLogs = paymentLogs;
+            RescheduleRequests = rescheduleRequests;
+            Messages = messages;
         }
 
         public Task<int> SaveChangesAsync() => _ctx.SaveChangesAsync();
@@ -86,5 +92,4 @@ namespace DataLayer.Repositories
 
         public void Dispose() => _ctx.Dispose();
     }
-
 }

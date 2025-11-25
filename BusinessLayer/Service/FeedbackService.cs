@@ -1,6 +1,7 @@
 ﻿using BusinessLayer.DTOs.Feedback;
 using BusinessLayer.Service.Interface;
 using DataLayer.Entities;
+using DataLayer.Enum;
 using DataLayer.Repositories.Abstraction;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -24,60 +25,47 @@ namespace BusinessLayer.Service
 
         public async Task<FeedbackDto> CreateAsync(string actorUserId, CreateFeedbackRequest req)
         {
-            if (string.IsNullOrWhiteSpace(req.LessonId) || string.IsNullOrWhiteSpace(req.ToUserId))
-                throw new ArgumentException("Thiếu LessonId/ToUserId");
+            if (string.IsNullOrWhiteSpace(req.ClassId) || string.IsNullOrWhiteSpace(req.ToUserId))
+                throw new ArgumentException("Thiếu ClassId/ToUserId");
             if (req.Rating is < 0 or > 5)
                 throw new ArgumentException("Rating phải trong khoảng 0..5");
 
-            var lesson = await _ctx.Lessons
-                .Include(l => l.Class)
-                .Include(l => l.ScheduleEntries)
-                .FirstOrDefaultAsync(l => l.Id == req.LessonId)
-                ?? throw new KeyNotFoundException("Không tìm thấy buổi học");
+            // 1. Lấy Class
+            var cls = await _ctx.Classes
+                .Include(c => c.Tutor).ThenInclude(t => t.User)
+                .Include(c => c.ClassAssigns).ThenInclude(ca => ca.Student).ThenInclude(s => s.User)
+                .FirstOrDefaultAsync(c => c.Id == req.ClassId)
+                ?? throw new KeyNotFoundException("Không tìm thấy lớp học");
 
-            /*var tutorUserId = lesson.Class?.TutorId
-                              ?? lesson.ScheduleEntries.FirstOrDefault()?.TutorId
-                              ?? throw new InvalidOperationException("Buổi học chưa gắn tutor");
+            // 2. Lấy TutorProfile để map sang UserId
+            var tutorProfileId = cls.TutorId
+                               ?? throw new InvalidOperationException("Lớp học chưa gắn gia sư");
 
+            var tutorProfile = await _uow.TutorProfiles.GetAsync(p => p.Id == tutorProfileId)
+                               ?? throw new KeyNotFoundException($"Không tìm thấy TutorProfile (Id={tutorProfileId})");
+
+            var actualTutorUserId = tutorProfile.UserId;
+
+            // 3. Lấy actor
             var actor = await _uow.Users.GetByIdAsync(actorUserId)
                         ?? throw new KeyNotFoundException("Không tìm thấy user");
 
-            await EnsureParticipantPermission(actor, req.ToUserId, lesson, tutorUserId);*/
+            // 4. Check quyền: actor có thuộc lớp & toUser hợp lệ không
+            await EnsureClassParticipantPermission(actor, req.ToUserId, cls, actualTutorUserId);
 
-            // ===== PHIÊN BẢN SỬA LẠI (TRONG CreateAsync) =====
+            // 5. Check trùng feedback trong cùng class
+            var exists = await _uow.Feedbacks.ExistsAsync(actorUserId, req.ToUserId, req.ClassId);
+            if (exists) throw new InvalidOperationException("Bạn đã gửi feedback cho lớp học này.");
 
-            // BƯỚC 1: Lấy ID của HỒ SƠ GIA SƯ (TutorProfile.Id) từ buổi học
-            var tutorProfileId = lesson.Class?.TutorId
-                               ?? lesson.ScheduleEntries.FirstOrDefault()?.TutorId
-                               ?? throw new InvalidOperationException("Buổi học chưa gắn tutor");
-
-            // BƯỚC 2: Từ Profile.Id, tìm User.Id tương ứng
-            var tutorProfile = await _uow.TutorProfiles.GetAsync(p => p.Id == tutorProfileId)
-                               ?? throw new KeyNotFoundException($"Không tìm thấy TutorProfile (Id={tutorProfileId}) cho lớp này.");
-
-            // Đây mới là ID người dùng của gia sư (User.Id)
-            var actualTutorUserId = tutorProfile.UserId;
-
-            // BƯỚC 3: Lấy user đang hành động (giữ nguyên)
-            var actor = await _uow.Users.GetByIdAsync(actorUserId)
-                                ?? throw new KeyNotFoundException("Không tìm thấy user");
-
-            // BƯỚC 4: So sánh
-            // Bây giờ actualTutorUserId (từ CSDL) và req.ToUserId (từ payload)
-            // đều là User.Id, chúng sẽ khớp!
-            await EnsureParticipantPermission(actor, req.ToUserId, lesson, actualTutorUserId);
-
-            var exists = await _uow.Feedbacks.ExistsAsync(actorUserId, req.ToUserId, req.LessonId);
-            if (exists) throw new InvalidOperationException("Bạn đã gửi feedback cho buổi học này.");
-
+            // 6. Tạo feedback
             var fb = new Feedback
             {
                 FromUserId = actorUserId,
                 ToUserId = req.ToUserId,
-                LessonId = req.LessonId,
+                ClassId = req.ClassId,
                 Rating = req.Rating,
                 Comment = string.IsNullOrWhiteSpace(req.Comment) ? null : req.Comment.Trim(),
-                IsPublicOnTutorProfile = false, // ✅ lesson-only
+                IsPublicOnTutorProfile = false,
                 CreatedAt = DateTime.Now,
                 UpdatedAt = DateTime.Now
             };
@@ -85,7 +73,6 @@ namespace BusinessLayer.Service
             await _uow.Feedbacks.CreateAsync(fb);
             await _uow.SaveChangesAsync();
 
-            // Re-calc rating nếu ToUser là Tutor
             await RecalculateTutorRatingAsync(req.ToUserId);
 
             var fromName = actor.UserName ?? "User";
@@ -174,17 +161,13 @@ namespace BusinessLayer.Service
             return true;
         }
 
-        public async Task<IEnumerable<FeedbackDto>> GetLessonFeedbacksAsync(string lessonId)
+        public async Task<IEnumerable<FeedbackDto>> GetClassFeedbacksAsync(string classId)
         {
-            var items = await _uow.Feedbacks.GetByLessonAsync(lessonId);
-            var rs = new List<FeedbackDto>();
-            foreach (var f in items)
-            {
-                rs.Add(MapDto(f,
-                    f.FromUser?.UserName ?? "User",
-                    f.ToUser?.UserName ?? "User"));
-            }
-            return rs;
+            var items = await _uow.Feedbacks.GetByClassAsync(classId);
+            return items.Select(f => MapDto(
+                f,
+                f.FromUser?.UserName ?? "User",
+                f.ToUser?.UserName ?? "User"));
         }
 
         public async Task<(IEnumerable<FeedbackDto> items, int total)> GetTutorFeedbacksAsync(string tutorUserId, int page, int pageSize)
@@ -209,70 +192,70 @@ namespace BusinessLayer.Service
 
         // ===== Helpers =====
 
-        private async Task EnsureParticipantPermission(User actor, string toUserId, Lesson lesson, string tutorUserId)
+        private async Task EnsureClassParticipantPermission(User actor, string toUserId, Class cls, string tutorUserId)
         {
             var actorRole = actor.RoleName;
 
-            // Case A: Tutor đánh giá HS
+            // A. Tutor đánh giá học sinh
             if (actorRole == "Tutor")
             {
-                if (actor.Id != tutorUserId)
-                    throw new UnauthorizedAccessException("Tutor không sở hữu buổi học này");
+                var tutorProfile = await _uow.TutorProfiles.GetAsync(t => t.UserId == actor.Id)
+                                    ?? throw new InvalidOperationException("Không tìm thấy profile Tutor");
 
-                // Nếu là lớp: toUserId phải là userId của 1 học sinh thuộc lớp
-                if (lesson.ClassId != null)
-                {
-                    var isStudentInClass = await _ctx.ClassAssigns
-                        .Include(x => x.Student)
-                        .AnyAsync(x => x.ClassId == lesson.ClassId &&
-                                       x.Student != null &&
-                                       x.Student.UserId == toUserId);
-                    if (!isStudentInClass)
-                        throw new InvalidOperationException("Người nhận không thuộc lớp này");
-                }
-                // 1-1: bạn có thể thêm ràng buộc Lesson <-> student nếu có
+                if (tutorProfile.Id != cls.TutorId)
+                    throw new UnauthorizedAccessException("Tutor không sở hữu lớp này");
+
+                var isStudentInClass = cls.ClassAssigns.Any(ca =>
+                    ca.Student != null &&
+                    ca.Student.User != null &&
+                    ca.Student.User.Id == toUserId &&
+                    ca.ApprovalStatus == ApprovalStatus.Approved);
+
+                if (!isStudentInClass)
+                    throw new InvalidOperationException("Người nhận không thuộc lớp này");
+
                 return;
             }
 
-            // Case B: Student đánh giá Tutor
+            // B. Student đánh giá Tutor
             if (actorRole == "Student")
             {
-                // actor phải là student trong lớp
-                if (lesson.ClassId == null)
-                    throw new InvalidOperationException("Buổi học 1-1: bạn cần rule xác thực student tham gia");
-
                 var stuProfile = await _uow.StudentProfiles.GetAsync(s => s.UserId == actor.Id)
                                  ?? throw new InvalidOperationException("Không tìm thấy profile HS");
 
-                var isInClass = await _ctx.ClassAssigns
-                    .AnyAsync(x => x.ClassId == lesson.ClassId && x.StudentId == stuProfile.Id);
-                if (!isInClass) throw new UnauthorizedAccessException("Bạn không thuộc lớp của buổi học");
+                var isInClass = cls.ClassAssigns.Any(ca =>
+                    ca.StudentId == stuProfile.Id &&
+                    ca.ApprovalStatus == ApprovalStatus.Approved);
+
+                if (!isInClass)
+                    throw new UnauthorizedAccessException("Bạn không thuộc lớp học này");
 
                 if (toUserId != tutorUserId)
-                    throw new InvalidOperationException("Student chỉ có thể đánh giá Tutor của buổi");
+                    throw new InvalidOperationException("Student chỉ có thể đánh giá Tutor của lớp");
+
                 return;
             }
 
-            // Case C: Parent đánh giá Tutor (thay mặt con)
+            // C. Parent đánh giá Tutor
             if (actorRole == "Parent")
             {
-                if (lesson.ClassId == null)
-                    throw new InvalidOperationException("Buổi học 1-1: cần rule link parent-child cụ thể");
-
-                // Parent phải có link tới 1 học sinh thuộc lớp
                 var childIds = await _uow.ParentProfiles.GetChildrenIdsAsync(actor.Id);
-                var studentInClass = await _ctx.ClassAssigns
-                    .AnyAsync(x => x.ClassId == lesson.ClassId && x.StudentId != null && childIds.Contains(x.StudentId));
-                if (!studentInClass)
-                    throw new UnauthorizedAccessException("Phụ huynh không có học sinh tham gia lớp này");
+
+                var hasChildInClass = cls.ClassAssigns.Any(ca =>
+                    ca.StudentId != null &&
+                    childIds.Contains(ca.StudentId) &&
+                    ca.ApprovalStatus == ApprovalStatus.Approved);
+
+                if (!hasChildInClass)
+                    throw new UnauthorizedAccessException("Phụ huynh không có học sinh trong lớp này");
 
                 if (toUserId != tutorUserId)
-                    throw new InvalidOperationException("Parent chỉ có thể đánh giá Tutor của buổi");
+                    throw new InvalidOperationException("Parent chỉ có thể đánh giá Tutor của lớp");
+
                 return;
             }
 
-            // Các role khác: chặn
-            throw new UnauthorizedAccessException("Bạn không có quyền gửi feedback cho buổi này");
+            throw new UnauthorizedAccessException("Bạn không có quyền gửi feedback cho lớp này");
         }
 
         private async Task RecalculateTutorRatingAsync(string toUserId)
@@ -297,7 +280,7 @@ namespace BusinessLayer.Service
             return new FeedbackDto
             {
                 Id = f.Id,
-                LessonId = f.LessonId ?? "",
+                ClassId = f.ClassId ?? "",
                 FromUserId = f.FromUserId ?? "",
                 FromUserName = fromName,
                 ToUserId = f.ToUserId ?? "",

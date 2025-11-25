@@ -29,5 +29,6 @@ namespace DataLayer.Repositories.Abstraction
             int pageSize);
         Task<TutorProfile?> GetApprovedByUserIdAsync(string userId);
         Task<string?> GetTutorUserIdByTutorProfileIdAsync(string tutorProfileId);
+        Task<string?> GetIdByUserIdAsync(string userId);
     }
 }

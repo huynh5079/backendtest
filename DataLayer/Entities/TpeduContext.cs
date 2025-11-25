@@ -25,6 +25,7 @@ public partial class TpeduContext : DbContext
     public virtual DbSet<Notification> Notifications { get; set; }
     public virtual DbSet<ParentProfile> ParentProfiles { get; set; }
     public virtual DbSet<Report> Reports { get; set; }
+    public virtual DbSet<RescheduleRequest> RescheduleRequests { get; set; }
     public virtual DbSet<Role> Roles { get; set; }
     public virtual DbSet<ScheduleEntry> ScheduleEntries { get; set; }
     public virtual DbSet<StudentProfile> StudentProfiles { get; set; }
@@ -181,12 +182,17 @@ public partial class TpeduContext : DbContext
             entity.HasKey(e => e.Id).HasName("PK__Feedback__6A4BEDD6F1A4F2BB");
             entity.ToTable("Feedback");
 
+            entity.HasIndex(e => new { e.FromUserId, e.ToUserId, e.ClassId })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_Feedback_From_To_Class");
+
             entity.HasIndex(e => new { e.FromUserId, e.ToUserId, e.LessonId })
                   .IsUnique()
                   .HasDatabaseName("UQ_Feedback_From_To_Lesson");
 
             entity.HasIndex(e => e.FromUserId, "IX_Feedback_FromUserId");
             entity.HasIndex(e => e.LessonId, "IX_Feedback_LessonId");
+            entity.HasIndex(e => e.ClassId, "IX_Feedback_ClassId");
             entity.HasIndex(e => e.ToUserId, "IX_Feedback_ToUserId");
 
             entity.Property(e => e.IsPublicOnTutorProfile).HasDefaultValue(false);
@@ -199,6 +205,10 @@ public partial class TpeduContext : DbContext
             entity.HasOne(d => d.Lesson).WithMany(p => p.Feedbacks)
                 .HasForeignKey(d => d.LessonId)
                 .HasConstraintName("FK__Feedback__Lesson__151B244E");
+
+            entity.HasOne(d => d.Class).WithMany(p => p.Feedbacks)
+                  .HasForeignKey(d => d.ClassId)
+                  .HasConstraintName("FK__Feedback__Class__261B255A");
 
             entity.HasOne(d => d.ToUser).WithMany(p => p.FeedbackToUsers)
                 .HasForeignKey(d => d.ToUserId)
@@ -353,6 +363,39 @@ public partial class TpeduContext : DbContext
                   .WithMany()
                   .HasForeignKey(d => d.TargetMediaId)
                   .HasConstraintName("FK_Report_TargetMedia");
+        });
+
+        modelBuilder.Entity<RescheduleRequest>(entity =>
+        {
+            entity.ToTable("RescheduleRequest");
+
+            entity.HasIndex(e => e.LessonId);
+            entity.HasIndex(e => e.RequesterUserId);
+            entity.HasIndex(e => e.ResponderUserId);
+            entity.HasIndex(e => e.OriginalScheduleEntryId);
+
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(50);
+            entity.Property(e => e.Reason).HasMaxLength(500);
+
+            entity.HasOne(d => d.RequesterUser)
+                .WithMany()
+                .HasForeignKey(d => d.RequesterUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.ResponderUser)
+                .WithMany()
+                .HasForeignKey(d => d.ResponderUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.Lesson)
+                .WithMany() // Một Lesson có thể có nhiều yêu cầu đổi lịch
+                .HasForeignKey(d => d.LessonId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.OriginalScheduleEntry)
+                .WithMany() // Một ScheduleEntry có thể bị yêu cầu đổi nhiều lần
+                .HasForeignKey(d => d.OriginalScheduleEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Role>(entity =>

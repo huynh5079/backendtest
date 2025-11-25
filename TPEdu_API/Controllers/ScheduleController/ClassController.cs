@@ -1,10 +1,12 @@
 using BusinessLayer.DTOs.API;
 using BusinessLayer.DTOs.Schedule.Class;
+using BusinessLayer.DTOs.Schedule.ClassAssign;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Enum;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Collections.Generic;
 using TPEdu_API.Common.Extensions;
 
 namespace TPEdu_API.Controllers
@@ -15,13 +17,16 @@ namespace TPEdu_API.Controllers
     {
         private readonly IClassService _classService;
         private readonly ITutorProfileService _tutorProfileService;
+        private readonly IAssignService _assignService;
 
         public ClassController(
             IClassService classService,
-            ITutorProfileService tutorProfileService)
+            ITutorProfileService tutorProfileService,
+            IAssignService assignService)
         {
             _classService = classService;
             _tutorProfileService = tutorProfileService;
+            _assignService = assignService;
         }
 
         #region POST
@@ -128,6 +133,18 @@ namespace TPEdu_API.Controllers
             var tutorUserId = User.RequireUserId();
             var classes = await _classService.GetMyClassesAsync(tutorUserId);
             return Ok(ApiResponse<IEnumerable<ClassDto>>.Ok(classes));
+        }
+
+        /// <summary>
+        /// [Tutor] Get list of students enrolled in a class.
+        /// </summary>
+        [HttpGet("{classId}/students")]
+        [Authorize(Roles = "Tutor")]
+        public async Task<IActionResult> GetStudentsInClass(string classId)
+        {
+            var tutorUserId = User.RequireUserId();
+            var students = await _assignService.GetStudentsInClassAsync(tutorUserId, classId);
+            return Ok(ApiResponse<List<StudentEnrollmentDto>>.Ok(students, "Lấy danh sách học sinh thành công."));
         }
         #endregion
 
