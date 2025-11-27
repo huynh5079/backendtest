@@ -14,7 +14,7 @@ namespace BusinessLayer.Service
     {
         private readonly GoogleAI _googleAi;
         // Sử dụng string tên model trực tiếp để tránh lỗi phiên bản enum
-        private readonly string _modelName = "gemini-2.5-flash";
+        private readonly string _modelName = "gemini-1.5-pro";
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<AiAnalysisService> _logger;
 
@@ -34,14 +34,33 @@ namespace BusinessLayer.Service
         }
 
         // 1. Phân tích file (Hỗ trợ PDF, Ảnh, Video...)
+        // ... (giữ nguyên các phần khác)
+
         public async Task<string> AnalyzeFileAsync(string textPrompt, string fileUrl, string mimeType)
         {
-            _logger.LogInformation("Đang tải file từ URL: {FileUrl}", fileUrl);
+            _logger.LogInformation("Đang tải file từ URL: {FileUrl} (Type: {MimeType})", fileUrl, mimeType);
+
+            // 0. DANH SÁCH CÁC ĐỊNH DẠNG GEMINI HỖ TRỢ
+            var supportedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/pdf",
+                "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
+                "audio/wav", "audio/mp3", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac",
+                "video/mp4", "video/mpeg", "video/mov", "video/avi", "video/x-flv", "video/mpg", "video/webm", "video/wmv", "video/3gpp",
+                "text/plain", "text/html", "text/css", "text/javascript", "application/json", "text/xml", "text/csv"
+            };
+
+            // Kiểm tra nếu file không được hỗ trợ
+            if (!supportedMimeTypes.Contains(mimeType))
+            {
+                _logger.LogWarning("Định dạng file {MimeType} không được Gemini hỗ trợ trực tiếp.", mimeType);
+                // Trả về thông báo để ChatbotService biết và bỏ qua file này, không làm lỗi cả quy trình
+                return $"[HỆ THỐNG]: File này có định dạng ({mimeType}) mà AI chưa hỗ trợ đọc trực tiếp. Vui lòng upload PDF hoặc Ảnh.";
+            }
 
             byte[] fileBytes;
             try
             {
-                // Tải file về RAM
                 var client = _httpClientFactory.CreateClient();
                 fileBytes = await client.GetByteArrayAsync(fileUrl);
             }
@@ -53,24 +72,21 @@ namespace BusinessLayer.Service
 
             try
             {
-                // Khởi tạo model
                 var model = _googleAi.GenerativeModel(model: _modelName);
 
-                // Tạo nội dung gửi đi (bao gồm Text và File Base64)
-                // Mscc hỗ trợ rất đơn giản, không cần Protobuf phức tạp
                 var request = new GenerateContentRequest
                 {
                     Contents = new List<Content>
+            {
+                new Content
+                {
+                    Parts = new List<IPart>
                     {
-                        new Content
-                        {
-                            Parts = new List<IPart>
-                            {
-                                new TextData { Text = textPrompt },
-                                new InlineData { MimeType = mimeType, Data = Convert.ToBase64String(fileBytes) }
-                            }
-                        }
+                        new TextData { Text = textPrompt },
+                        new InlineData { MimeType = mimeType, Data = Convert.ToBase64String(fileBytes) }
                     }
+                }
+            }
                 };
 
                 var response = await model.GenerateContent(request);
@@ -79,10 +95,10 @@ namespace BusinessLayer.Service
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Lỗi khi gọi Gemini API");
-                return $"Lỗi hệ thống AI: {ex.Message}";
+                // Trả về message lỗi gọn gàng hơn để hiển thị trong chat
+                return $"Lỗi phân tích AI: {ex.Message}";
             }
         }
-
         // 2. Chat / Chỉ văn bản
         public async Task<string> GenerateTextOnlyAsync(string textPrompt)
         {
