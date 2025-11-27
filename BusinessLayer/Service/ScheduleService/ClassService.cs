@@ -1,8 +1,10 @@
 ﻿using BusinessLayer.DTOs.Schedule.Class;
+using BusinessLayer.DTOs.Wallet;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
 using DataLayer.Enum;
+using DataLayer.Repositories.Abstraction;
 using DataLayer.Repositories.Abstraction.Schedule;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -16,17 +18,23 @@ namespace BusinessLayer.Service.ScheduleService
     public class ClassService : IClassService
     {
         private readonly IScheduleUnitOfWork _uow;
+        private readonly IUnitOfWork _mainUow;
         private readonly TpeduContext _context;
         private readonly ITutorProfileService _tutorProfileService;
+        private readonly IEscrowService _escrowService;
 
         public ClassService(
             IScheduleUnitOfWork uow,
+            IUnitOfWork mainUow,
             TpeduContext context,
-            ITutorProfileService tutorProfileService)
+            ITutorProfileService tutorProfileService,
+            IEscrowService escrowService)
         {
             _uow = uow;
+            _mainUow = mainUow;
             _context = context;
             _tutorProfileService = tutorProfileService;
+            _escrowService = escrowService;
         }
 
         #region Public (Student/Guest)
@@ -292,6 +300,52 @@ namespace BusinessLayer.Service.ScheduleService
                     throw;
                 }
             });
+            return true;
+        }
+
+        public async Task<bool> CompleteClassAsync(string tutorUserId, string classId)
+        {
+            var tutorProfileId = await _tutorProfileService.GetTutorProfileIdByUserIdAsync(tutorUserId);
+            if (tutorProfileId == null)
+                throw new UnauthorizedAccessException("Tài khoản gia sư không hợp lệ.");
+
+            var targetClass = await _uow.Classes.GetAsync(
+                filter: c => c.Id == classId && c.TutorId == tutorProfileId);
+
+            if (targetClass == null)
+                throw new KeyNotFoundException("Không tìm thấy lớp học hoặc bạn không có quyền.");
+
+            if (targetClass.Status == ClassStatus.Completed)
+                throw new InvalidOperationException("Lớp học đã được đánh dấu hoàn thành rồi.");
+
+            if (targetClass.Status != ClassStatus.Ongoing)
+                throw new InvalidOperationException($"Chỉ có thể hoàn thành lớp học đang ở trạng thái Ongoing.");
+
+            // Tìm Escrow của lớp này
+            var escrows = await _mainUow.Escrows.GetAllAsync(
+                filter: e => e.ClassId == classId && e.Status == EscrowStatus.Held);
+            var escrow = escrows.FirstOrDefault();
+
+            if (escrow == null)
+                throw new InvalidOperationException("Không tìm thấy escrow cho lớp học này. Vui lòng kiểm tra lại.");
+
+            // Cập nhật trạng thái lớp
+            targetClass.Status = ClassStatus.Completed;
+            await _uow.Classes.UpdateAsync(targetClass);
+            await _uow.SaveChangesAsync();
+
+            // Giải ngân escrow: Hoàn cọc + Giải ngân học phí + Commission
+            var releaseResult = await _escrowService.ReleaseAsync(tutorUserId, new ReleaseEscrowRequest { EscrowId = escrow.Id });
+            
+            if (releaseResult.Status == "Fail")
+            {
+                // Rollback class status nếu release fail
+                targetClass.Status = ClassStatus.Ongoing;
+                await _uow.Classes.UpdateAsync(targetClass);
+                await _uow.SaveChangesAsync();
+                throw new InvalidOperationException($"Không thể giải ngân escrow: {releaseResult.Message}");
+            }
+
             return true;
         }
 

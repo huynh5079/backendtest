@@ -178,5 +178,19 @@ namespace TPEdu_API.Controllers
             return Ok(ApiResponse<object>.Ok(null, "Xóa lớp học thành công."));
         }
         #endregion
+
+        #region PATCH
+        /// <summary>
+        /// [Tutor] Hoàn thành lớp học - tự động giải ngân escrow (hoàn cọc + giải ngân học phí + commission)
+        /// </summary>
+        [HttpPatch("{id}/complete")]
+        [Authorize(Roles = "Tutor")]
+        public async Task<IActionResult> CompleteClass(string id)
+        {
+            var tutorUserId = User.RequireUserId();
+            await _classService.CompleteClassAsync(tutorUserId, id);
+            return Ok(ApiResponse<object>.Ok(null, "Đã hoàn thành lớp học và giải ngân escrow thành công."));
+        }
+        #endregion
     }
 }

@@ -21,5 +21,6 @@ namespace BusinessLayer.Service.Interface.IScheduleService
         Task<ClassDto?> UpdateClassAsync(string tutorUserId, string classId, UpdateClassDto dto);
         Task<bool> UpdateClassScheduleAsync(string tutorUserId, string classId, UpdateClassScheduleDto dto);
         Task<bool> DeleteClassAsync(string tutorUserId, string classId);
+        Task<bool> CompleteClassAsync(string tutorUserId, string classId); // Hoàn thành lớp và giải ngân escrow
     }
 }
