@@ -371,9 +371,152 @@ namespace DataLayer.Migrations
                     b.ToTable("ClassSchedule", (string)null);
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.Commission", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("GroupClassOffline")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<decimal>("GroupClassOnline")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<decimal>("OneToOneOffline")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<decimal>("OneToOneOnline")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Commission", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.Conversation", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ClassId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ClassRequestId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastMessageAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(getdate())");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "ClassId" }, "IX_Conversation_ClassId");
+
+                    b.HasIndex(new[] { "ClassRequestId" }, "IX_Conversation_ClassRequestId");
+
+                    b.HasIndex(new[] { "Type" }, "IX_Conversation_Type");
+
+                    b.ToTable("Conversation", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.ConversationParticipant", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ConversationId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("(getdate())");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Member");
+
+                    b.Property<int>("UnreadCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ConversationParticipant_Conversation_User");
+
+                    b.HasIndex(new[] { "ConversationId" }, "IX_ConversationParticipant_ConversationId");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_ConversationParticipant_UserId");
+
+                    b.ToTable("ConversationParticipant", (string)null);
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Escrow", b =>
                 {
                     b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ClassAssignId")
+                        .IsRequired()
+                        .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("ClassId")
@@ -381,8 +524,8 @@ namespace DataLayer.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<decimal>("CommissionRate")
-                        .HasColumnType("decimal(5,2)");
+                    b.Property<decimal>("CommissionRateSnapshot")
+                        .HasColumnType("decimal(5,4)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -393,13 +536,14 @@ namespace DataLayer.Migrations
                     b.Property<decimal>("GrossAmount")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<string>("PayerUserId")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
+                    b.Property<decimal>("RefundedAmount")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime?>("RefundedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ReleasedAmount")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime?>("ReleasedAt")
                         .HasColumnType("datetime2");
@@ -409,7 +553,13 @@ namespace DataLayer.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<string>("StudentUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("TutorUserId")
+                        .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
@@ -419,13 +569,52 @@ namespace DataLayer.Migrations
                     b.HasKey("Id")
                         .HasName("PK__Escrow__Id");
 
+                    b.HasIndex("ClassAssignId");
+
                     b.HasIndex("ClassId");
 
-                    b.HasIndex("PayerUserId");
+                    b.HasIndex("StudentUserId");
 
                     b.HasIndex("TutorUserId");
 
                     b.ToTable("Escrow", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.FavoriteTutor", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TutorProfileId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "TutorProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_FavoriteTutor_User_Tutor");
+
+                    b.HasIndex(new[] { "TutorProfileId" }, "IX_FavoriteTutor_TutorProfileId");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_FavoriteTutor_UserId");
+
+                    b.ToTable("FavoriteTutor", (string)null);
                 });
 
             modelBuilder.Entity("DataLayer.Entities.Feedback", b =>
@@ -629,14 +818,45 @@ namespace DataLayer.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("Content")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<DateTime?>("CreatedAt")
+                    b.Property<string>("ConversationId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime");
 
                     b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<long?>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileUrl")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<bool>("IsEdited")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("MediaType")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Text");
 
                     b.Property<string>("ReceiverId")
                         .HasColumnType("nvarchar(450)");
@@ -649,10 +869,12 @@ namespace DataLayer.Migrations
                         .HasColumnType("nvarchar(255)");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime");
 
                     b.HasKey("Id")
                         .HasName("PK__Message__C87C0C9C8E34634D");
+
+                    b.HasIndex(new[] { "ConversationId" }, "IX_Message_ConversationId");
 
                     b.HasIndex(new[] { "ReceiverId" }, "IX_Message_ReceiverId");
 
@@ -1088,6 +1310,33 @@ namespace DataLayer.Migrations
                     b.ToTable("StudentProfile", (string)null);
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.SystemSettings", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("DepositRate")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SystemSettings", (string)null);
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Transaction", b =>
                 {
                     b.Property<string>("Id")
@@ -1175,6 +1424,66 @@ namespace DataLayer.Migrations
                     b.HasIndex("TutorId");
 
                     b.ToTable("TutorApplication", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.TutorDepositEscrow", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ClassId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("DepositAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("DepositRateSnapshot")
+                        .HasColumnType("decimal(5,4)");
+
+                    b.Property<string>("EscrowId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ForfeitReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ForfeitedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RefundedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("TutorUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "ClassId" }, "IX_TutorDepositEscrow_ClassId");
+
+                    b.HasIndex(new[] { "EscrowId" }, "IX_TutorDepositEscrow_EscrowId");
+
+                    b.HasIndex(new[] { "TutorUserId" }, "IX_TutorDepositEscrow_TutorUserId");
+
+                    b.ToTable("TutorDepositEscrow", (string)null);
                 });
 
             modelBuilder.Entity("DataLayer.Entities.TutorProfile", b =>
@@ -1482,32 +1791,104 @@ namespace DataLayer.Migrations
                     b.Navigation("Class");
                 });
 
-            modelBuilder.Entity("DataLayer.Entities.Escrow", b =>
+            modelBuilder.Entity("DataLayer.Entities.Conversation", b =>
                 {
                     b.HasOne("DataLayer.Entities.Class", "Class")
                         .WithMany()
                         .HasForeignKey("ClassId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .HasConstraintName("FK_Conversation_Class");
 
-                    b.HasOne("DataLayer.Entities.User", "PayerUser")
+                    b.HasOne("DataLayer.Entities.ClassRequest", "ClassRequest")
                         .WithMany()
-                        .HasForeignKey("PayerUserId")
+                        .HasForeignKey("ClassRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_Conversation_ClassRequest");
+
+                    b.Navigation("Class");
+
+                    b.Navigation("ClassRequest");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.ConversationParticipant", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Conversation", "Conversation")
+                        .WithMany("Participants")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_ConversationParticipant_Conversation");
+
+                    b.HasOne("DataLayer.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("FK_Escrow_PayerUser");
+                        .HasConstraintName("FK_ConversationParticipant_User");
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.Escrow", b =>
+                {
+                    b.HasOne("DataLayer.Entities.ClassAssign", "ClassAssign")
+                        .WithMany()
+                        .HasForeignKey("ClassAssignId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Escrow_ClassAssign");
+
+                    b.HasOne("DataLayer.Entities.Class", "Class")
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Escrow_Class");
+
+                    b.HasOne("DataLayer.Entities.User", "StudentUser")
+                        .WithMany()
+                        .HasForeignKey("StudentUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_Escrow_StudentUser");
 
                     b.HasOne("DataLayer.Entities.User", "TutorUser")
                         .WithMany()
                         .HasForeignKey("TutorUserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
                         .HasConstraintName("FK_Escrow_TutorUser");
 
                     b.Navigation("Class");
 
-                    b.Navigation("PayerUser");
+                    b.Navigation("ClassAssign");
+
+                    b.Navigation("StudentUser");
 
                     b.Navigation("TutorUser");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.FavoriteTutor", b =>
+                {
+                    b.HasOne("DataLayer.Entities.TutorProfile", "TutorProfile")
+                        .WithMany()
+                        .HasForeignKey("TutorProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_FavoriteTutor_TutorProfile");
+
+                    b.HasOne("DataLayer.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_FavoriteTutor_User");
+
+                    b.Navigation("TutorProfile");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("DataLayer.Entities.Feedback", b =>
@@ -1586,15 +1967,25 @@ namespace DataLayer.Migrations
 
             modelBuilder.Entity("DataLayer.Entities.Message", b =>
                 {
+                    b.HasOne("DataLayer.Entities.Conversation", "Conversation")
+                        .WithMany("Messages")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_Message_Conversation");
+
                     b.HasOne("DataLayer.Entities.User", "Receiver")
                         .WithMany("MessageReceivers")
                         .HasForeignKey("ReceiverId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("FK__Message__Receive__19DFD96B");
 
                     b.HasOne("DataLayer.Entities.User", "Sender")
                         .WithMany("MessageSenders")
                         .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("FK__Message__SenderI__18EBB532");
+
+                    b.Navigation("Conversation");
 
                     b.Navigation("Receiver");
 
@@ -1769,6 +2160,35 @@ namespace DataLayer.Migrations
                     b.Navigation("Tutor");
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.TutorDepositEscrow", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Class", "Class")
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_TutorDepositEscrow_Class");
+
+                    b.HasOne("DataLayer.Entities.Escrow", "Escrow")
+                        .WithMany()
+                        .HasForeignKey("EscrowId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_TutorDepositEscrow_Escrow");
+
+                    b.HasOne("DataLayer.Entities.User", "TutorUser")
+                        .WithMany()
+                        .HasForeignKey("TutorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_TutorDepositEscrow_TutorUser");
+
+                    b.Navigation("Class");
+
+                    b.Navigation("Escrow");
+
+                    b.Navigation("TutorUser");
+                });
+
             modelBuilder.Entity("DataLayer.Entities.TutorProfile", b =>
                 {
                     b.HasOne("DataLayer.Entities.User", "User")
@@ -1824,6 +2244,13 @@ namespace DataLayer.Migrations
                     b.Navigation("ClassRequestSchedules");
 
                     b.Navigation("TutorApplications");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.Conversation", b =>
+                {
+                    b.Navigation("Messages");
+
+                    b.Navigation("Participants");
                 });
 
             modelBuilder.Entity("DataLayer.Entities.Lesson", b =>

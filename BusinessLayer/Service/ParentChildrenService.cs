@@ -255,5 +255,21 @@ namespace BusinessLayer.Service
             await _uow.SaveChangesAsync();
             return (true, "đã hủy liên kết học sinh");
         }
+
+        // list all children ids of a parent
+        public Task<List<string>> GetChildrenIdsByParentUserIdAsync(string parentUserId)
+        {
+            throw new NotImplementedException();
+        }
+
+        // check if a student profile is a child of a parent
+        public async Task<bool> IsChildOfParentAsync(string parentUserId, string studentProfileId)
+        {
+            var childrenIds = await GetChildrenIdsByParentUserIdAsync(parentUserId);
+            return childrenIds.Contains(studentProfileId);
+        }
+
+
+
     }
 }

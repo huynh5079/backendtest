@@ -17,6 +17,12 @@ namespace BusinessLayer.Service.Interface
         Task<(bool ok, string message)> LinkExistingChildAsync(string parentUserId, LinkExistingChildRequest req);
         Task<(bool ok, string message, ChildDetailDto? data)> UpdateChildAsync(string parentUserId, string studentId, UpdateChildRequest req);
         Task<(bool ok, string message)> UnlinkChildAsync(string parentUserId, string studentId);
+
+        // list all children ids of a parent
+        Task<List<string>> GetChildrenIdsByParentUserIdAsync(string parentUserId);
+
+        // check if a student profile is a child of a parent
+        Task<bool> IsChildOfParentAsync(string parentUserId, string studentProfileId);
     }
 
 }

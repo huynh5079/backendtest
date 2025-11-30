@@ -140,8 +140,19 @@ namespace TPEdu_API.Controllers
                 if (tutorUserId == null)
                     return Unauthorized(new { message = "Token không hợp lệ." });
 
-                await _classRequestService.RespondToDirectRequestAsync(tutorUserId, id, accept);
-                return Ok(new { message = $"Đã {(accept ? "chấp nhận" : "từ chối")} yêu cầu." });
+                var classId = await _classRequestService.RespondToDirectRequestAsync(tutorUserId, id, accept);
+                
+                if (accept && !string.IsNullOrEmpty(classId))
+                {
+                    return Ok(new { 
+                        message = "Đã chấp nhận yêu cầu.",
+                        classId = classId // Trả về ClassId để học sinh dùng cho thanh toán
+                    });
+                }
+                else
+                {
+                    return Ok(new { message = "Đã từ chối yêu cầu." });
+                }
 
         }
 

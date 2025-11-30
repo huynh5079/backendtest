@@ -20,13 +20,16 @@ namespace BusinessLayer.Service.ScheduleService
     {
         private readonly IScheduleUnitOfWork _uow;
         private readonly IStudentProfileService _studentProfileService;
+        private readonly IParentChildrenService _parentChildrenService;
 
         public ScheduleViewService(
             IScheduleUnitOfWork uow,
-            IStudentProfileService studentProfileService)
+            IStudentProfileService studentProfileService,
+            IParentChildrenService parentChildrenService)
         {
             _uow = uow;
-            _studentProfileService = studentProfileService;
+            _studentProfileService = studentProfileService; 
+            _parentChildrenService = parentChildrenService;
         }
 
         public async Task<IEnumerable<ScheduleEntryDto>> GetTutorScheduleAsync(
@@ -34,65 +37,44 @@ namespace BusinessLayer.Service.ScheduleService
             DateTime startDate, 
             DateTime endDate, 
             string? entryType,
-            string? classId = null)
+            string? classId = null,
+            string? filterByStudentId = null)
         {
             //  startDate, endDate to UTC, endDate is full day
             var startUtc = startDate.Date.ToUniversalTime();
             // endDate ưill be 00:00 the next day in UTC
             var endUtc = endDate.Date.AddDays(1).ToUniversalTime();
 
-            // define includes with Block
-            Func<IQueryable<ScheduleEntry>, IQueryable<ScheduleEntry>> includes = query =>
-                query.Include(se => se.Lesson)
-                     .Include(se => se.Block)
-                     .OrderBy(se => se.StartTime);
+            // Parse EntryType
+            EntryType? targetEntryType = null;
+            if (!string.IsNullOrEmpty(entryType) && Enum.TryParse<EntryType>(entryType.ToUpper(), out var type))
+            {
+                targetEntryType = type;
+            }
 
-            // create base filter expression
+            // Apply classId filter if provided
+            // Only applies to LESSON entries, BLOCK entries don't have Lesson/Class
             Expression<Func<ScheduleEntry, bool>> filter = se =>
                 se.TutorId == tutorId &&
                 se.DeletedAt == null &&
                 se.StartTime < endUtc &&
-                se.EndTime > startUtc;
+                se.EndTime > startUtc &&
+                // Filter Class
+                (string.IsNullOrEmpty(classId) || (se.Lesson != null && se.Lesson.ClassId == classId)) &&
+                // Filter EntryType
+                (targetEntryType == null || se.EntryType == targetEntryType) &&
+                // Filter Student
+                (string.IsNullOrEmpty(filterByStudentId) || (se.Lesson != null && se.Lesson.Class.ClassAssigns.Any(ca => ca.StudentId == filterByStudentId)));
 
-            // Apply classId filter if provided
-            // Only applies to LESSON entries, BLOCK entries don't have Lesson/Class
-            if (!string.IsNullOrEmpty(classId))
-            {
-                filter = se =>
-                    se.TutorId == tutorId &&
-                    se.DeletedAt == null &&
-                    se.StartTime < endUtc &&
-                    se.EndTime > startUtc &&
-                    se.Lesson != null &&
-                    se.Lesson.ClassId == classId;
-            }
+            // define includes
+            Func<IQueryable<ScheduleEntry>, IQueryable<ScheduleEntry>> includes = query =>
+                query.Include(se => se.Lesson)
+                        .ThenInclude(l => l.Class)
+                            .ThenInclude(c => c.ClassAssigns) // Include to check if belong to this class
+                     .Include(se => se.Block)
+                     .OrderBy(se => se.StartTime);
 
-            if (!string.IsNullOrEmpty(entryType) && Enum.TryParse<EntryType>(entryType.ToUpper(), out var type))
-            {
-                // if have classId -> filter add classId to base
-                if (!string.IsNullOrEmpty(classId))
-                {
-                    filter = se =>
-                        se.TutorId == tutorId &&
-                        se.DeletedAt == null &&
-                        se.StartTime < endUtc &&
-                        se.EndTime > startUtc &&
-                        se.Lesson != null &&
-                        se.Lesson.ClassId == classId &&
-                        se.EntryType == type;
-                }
-                // If no classId, just filter by type
-                else
-                {
-                    filter = se =>
-                        se.TutorId == tutorId &&
-                        se.DeletedAt == null &&
-                        se.StartTime < endUtc &&
-                        se.EndTime > startUtc &&
-                        se.EntryType == type;
-                }
-            }
-
+            // Query
             var scheduleEntries = await _uow.ScheduleEntries.GetAllAsync(
                 filter: filter,
                 includes: includes
@@ -113,11 +95,15 @@ namespace BusinessLayer.Service.ScheduleService
             });
         }
 
-        public async Task<IEnumerable<ScheduleEntryDto>> GetStudentScheduleAsync(string studentUserId, DateTime startDate, DateTime endDate)
+        public async Task<IEnumerable<ScheduleEntryDto>> GetStudentScheduleAsync(
+            string studentUserId, 
+            DateTime startDate, 
+            DateTime endDate,
+            string? filterByTutorId = null)
         {
             // take studentUserId, get StudentProfileId
             var studentProfileId = await _studentProfileService.GetStudentProfileIdByUserIdAsync(studentUserId);
-            if (studentProfileId == null)
+            if (string.IsNullOrEmpty(studentProfileId))
                 throw new UnauthorizedAccessException("Tài khoản học sinh không hợp lệ.");
 
             // change startDate, endDate to UTC, endDate is full day
@@ -132,7 +118,8 @@ namespace BusinessLayer.Service.ScheduleService
                     se.StartTime < endUtc &&
                     se.EndTime > startUtc &&
                     // check if the Lesson's Class has an assignment for this student
-                    se.Lesson.Class.ClassAssigns.Any(ca => ca.StudentId == studentProfileId),
+                    se.Lesson.Class.ClassAssigns.Any(ca => ca.StudentId == studentProfileId) &&
+                    (string.IsNullOrEmpty(filterByTutorId) || se.TutorId == filterByTutorId),
 
                 includes: query => query
                     .Include(se => se.Lesson)
@@ -149,6 +136,7 @@ namespace BusinessLayer.Service.ScheduleService
                 // Find attendance record for this student in the lesson
                 var myAttendance = se.Lesson?.Attendances?
                     .FirstOrDefault(a => a.StudentId == studentProfileId);
+
                 return new ScheduleEntryDto
                 {
                     Id = se.Id,
@@ -164,6 +152,105 @@ namespace BusinessLayer.Service.ScheduleService
                 };
             });
         }
-    }
 
+        public async Task<IEnumerable<ScheduleEntryDto>> GetChildScheduleAsync(
+            string parentUserId,
+            string childProfileId,
+            DateTime startDate,
+            DateTime endDate)
+        {
+            // 1. Validate: Đứa trẻ này có phải con của Parent không?
+            var isChild = await _parentChildrenService.IsChildOfParentAsync(parentUserId, childProfileId);
+            if (!isChild)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền xem lịch của học sinh này.");
+            }
+
+            // 2. Lấy UserId của đứa trẻ (Vì hàm GetStudentScheduleAsync đang nhận UserId)
+            // Cần thêm hàm GetUserIdByProfileId trong StudentProfileService nếu chưa có.
+            // HOẶC: Sửa GetStudentScheduleAsync để nhận ProfileId trực tiếp (tốt hơn).
+
+            // Cách nhanh nhất hiện tại: Reuse logic query của GetStudentScheduleAsync nhưng viết lại đoạn đầu
+            // Để tránh phụ thuộc UserId, mình sẽ tách logic query ra private method (Refactoring).
+
+            return await GetScheduleByStudentProfileIdInternal(childProfileId, startDate, endDate);
+        }
+
+        public async Task<IEnumerable<ScheduleEntryDto>> GetAllChildrenScheduleAsync(
+            string parentUserId,
+            DateTime startDate,
+            DateTime endDate)
+        {
+            // 1. Lấy danh sách ID các con
+            var childrenIds = await _parentChildrenService.GetChildrenIdsByParentUserIdAsync(parentUserId);
+
+            if (!childrenIds.Any()) return new List<ScheduleEntryDto>();
+
+            var allSchedules = new List<ScheduleEntryDto>();
+
+            // 2. Loop lấy lịch từng con
+            // (Có thể dùng Task.WhenAll để chạy song song cho nhanh)
+            foreach (var childId in childrenIds)
+            {
+                var childSchedule = await GetScheduleByStudentProfileIdInternal(childId, startDate, endDate);
+
+                // (Optional) Gán thêm tên con vào Title để phụ huynh biết lịch của ai
+                // var childName = ... load name ...
+                // foreach(var s in childSchedule) s.Title = $"[{childName}] {s.Title}";
+
+                allSchedules.AddRange(childSchedule);
+            }
+
+            // 3. Sắp xếp tổng hợp theo thời gian
+            return allSchedules.OrderBy(s => s.StartTime);
+        }
+
+        // --- HELPER METHOD (Refactor từ GetStudentScheduleAsync) ---
+        // Hàm này query dựa trên ProfileID (không cần UserId) -> Dễ reuse cho cả Student và Parent
+        private async Task<IEnumerable<ScheduleEntryDto>> GetScheduleByStudentProfileIdInternal(
+            string studentProfileId,
+            DateTime startDate,
+            DateTime endDate,
+            string? filterByTutorId = null)
+        {
+            var startUtc = startDate.Date.ToUniversalTime();
+            var endUtc = endDate.Date.AddDays(1).ToUniversalTime();
+
+            var scheduleEntries = await _uow.ScheduleEntries.GetAllAsync(
+                filter: se =>
+                    se.DeletedAt == null &&
+                    se.EntryType == EntryType.LESSON &&
+                    se.StartTime < endUtc &&
+                    se.EndTime > startUtc &&
+                    se.Lesson.Class.ClassAssigns.Any(ca => ca.StudentId == studentProfileId) &&
+                    (string.IsNullOrEmpty(filterByTutorId) || se.TutorId == filterByTutorId),
+
+                includes: query => query
+                    .Include(se => se.Lesson)
+                        .ThenInclude(l => l.Class)
+                            .ThenInclude(c => c.ClassAssigns)
+                    .Include(se => se.Lesson)
+                        .ThenInclude(l => l.Attendances)
+                    .OrderBy(se => se.StartTime)
+            );
+
+            return scheduleEntries.Select(se =>
+            {
+                var myAttendance = se.Lesson?.Attendances?
+                    .FirstOrDefault(a => a.StudentId == studentProfileId);
+                return new ScheduleEntryDto
+                {
+                    Id = se.Id,
+                    TutorId = se.TutorId,
+                    StartTime = se.StartTime,
+                    EndTime = se.EndTime,
+                    EntryType = se.EntryType,
+                    LessonId = se.LessonId,
+                    ClassId = se.Lesson?.ClassId,
+                    Title = se.Lesson?.Title,
+                    AttendanceStatus = myAttendance?.Status.ToString()
+                };
+            });
+        }
+    }
 }

@@ -162,7 +162,7 @@ namespace BusinessLayer.Service.ScheduleService
                         Title = $"Lớp {request.Subject} (từ yêu cầu {request.Id})",
                         Description = $"{request.Description}\n\nYêu cầu đặc biệt: {request.SpecialRequirements}",
                         Price = request.Budget,
-                        Status = ClassStatus.Ongoing, // Class starts now
+                        Status = ClassStatus.Pending, // Chờ học sinh thanh toán - sẽ chuyển Ongoing khi đã thanh toán + đặt cọc
                         Location = request.Location,
                         Mode = request.Mode,
                         Subject = request.Subject,
@@ -180,8 +180,8 @@ namespace BusinessLayer.Service.ScheduleService
                         Id = Guid.NewGuid().ToString(),
                         ClassId = newClass.Id,
                         StudentId = studentProfileId,
-                        PaymentStatus = PaymentStatus.Paid, // payment was made in step 3
-                        ApprovalStatus = ApprovalStatus.Approved,
+                        PaymentStatus = PaymentStatus.Pending, // Chưa thanh toán - sẽ thanh toán qua /escrow/pay
+                        ApprovalStatus = ApprovalStatus.Approved, // Tutor đã apply + được HS chọn = Approved
                         EnrolledAt = DateTime.UtcNow
                     };
                     await _uow.ClassAssigns.CreateAsync(newAssignment); // Unsave
@@ -200,7 +200,7 @@ namespace BusinessLayer.Service.ScheduleService
 
                     // UPDATE STATUS (Close Request and Application)
                     application.Status = ApplicationStatus.Accepted;
-                    request.Status = ClassRequestStatus.Ongoing; // Paid and studying
+                    request.Status = ClassRequestStatus.Matched; // Đã khớp gia sư, chờ thanh toán (sẽ chuyển Ongoing khi đã thanh toán)
 
                     await _uow.TutorApplications.UpdateAsync(application); // Unsave
                     await _uow.ClassRequests.UpdateAsync(request); // Unsave

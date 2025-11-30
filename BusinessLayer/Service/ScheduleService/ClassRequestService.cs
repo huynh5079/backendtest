@@ -9,6 +9,7 @@ using DataLayer.Repositories.GenericType;
 using DataLayer.Repositories.GenericType.Abstraction;
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.Linq;
 using System.Linq.Expressions;
 
 namespace BusinessLayer.Service.ScheduleService;
@@ -20,19 +21,22 @@ public class ClassRequestService : IClassRequestService
     private readonly ITutorProfileService _tutorProfileService;
     private readonly TpeduContext _context;
     private readonly IParentProfileRepository _parentRepo;
+    private readonly IScheduleGenerationService _scheduleGenerationService;
 
     public ClassRequestService(
         IScheduleUnitOfWork uow,
         IStudentProfileService studentProfileService,
         ITutorProfileService tutorProfileService,
         TpeduContext context,
-        IParentProfileRepository parentRepo)
+        IParentProfileRepository parentRepo,
+        IScheduleGenerationService scheduleGenerationService)
     {
         _uow = uow;
         _studentProfileService = studentProfileService;
         _tutorProfileService = tutorProfileService;
         _context = context;
         _parentRepo = parentRepo;
+        _scheduleGenerationService = scheduleGenerationService;
     }
 
     #region Student's Actions
@@ -273,14 +277,15 @@ public class ClassRequestService : IClassRequestService
         return requests.Select(MapToResponseDto);
     }
 
-    public async Task<bool> RespondToDirectRequestAsync(string tutorUserId, string requestId, bool accept)
+    public async Task<string?> RespondToDirectRequestAsync(string tutorUserId, string requestId, bool accept)
     {
         var tutorProfileId = await _tutorProfileService.GetTutorProfileIdByUserIdAsync(tutorUserId);
         if (tutorProfileId == null)
             throw new UnauthorizedAccessException("Tài khoản gia sư không hợp lệ.");
 
         var request = await _uow.ClassRequests.GetAsync(
-            cr => cr.Id == requestId && cr.TutorId == tutorProfileId);
+            cr => cr.Id == requestId && cr.TutorId == tutorProfileId,
+            includes: q => q.Include(cr => cr.ClassRequestSchedules));
 
         if (request == null)
             throw new KeyNotFoundException("Không tìm thấy yêu cầu hoặc bạn không có quyền.");
@@ -288,11 +293,92 @@ public class ClassRequestService : IClassRequestService
         if (request.Status != ClassRequestStatus.Pending)
             throw new InvalidOperationException("Yêu cầu này đã được xử lý.");
 
-        request.Status = accept ? ClassRequestStatus.Active : ClassRequestStatus.Rejected;
+        if (!accept)
+        {
+            // Reject: chỉ cập nhật status
+            request.Status = ClassRequestStatus.Rejected;
+            await _uow.ClassRequests.UpdateAsync(request);
+            await _uow.SaveChangesAsync();
+            return null; // Reject không tạo Class, trả về null
+        }
 
-        await _uow.ClassRequests.UpdateAsync(request);
-        await _uow.SaveChangesAsync();
-        return true;
+        // Accept: Tạo Class + ClassAssign + Schedule
+        string? createdClassId = null;
+        var executionStrategy = _context.Database.CreateExecutionStrategy();
+        await executionStrategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // 1. Tạo Class từ ClassRequest
+                var newClass = new Class
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    TutorId = tutorProfileId,
+                    Title = $"Lớp {request.Subject} (từ yêu cầu {request.Id})",
+                    Description = $"{request.Description}\n\nYêu cầu đặc biệt: {request.SpecialRequirements}",
+                    Price = request.Budget,
+                    Status = ClassStatus.Pending, // Chờ học sinh thanh toán
+                    Location = request.Location,
+                    Mode = request.Mode,
+                    Subject = request.Subject,
+                    EducationLevel = request.EducationLevel,
+                    ClassStartDate = request.ClassStartDate,
+                    OnlineStudyLink = request.OnlineStudyLink,
+                    StudentLimit = 1, // 1-1
+                    CurrentStudentCount = 1
+                };
+                await _uow.Classes.CreateAsync(newClass);
+                // Lưu ClassId để trả về (sử dụng closure)
+                createdClassId = newClass.Id;
+
+                // 2. Tạo ClassAssign với PaymentStatus = Pending
+                var newAssignment = new ClassAssign
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ClassId = newClass.Id,
+                    StudentId = request.StudentId,
+                    PaymentStatus = PaymentStatus.Pending, // Chưa thanh toán - sẽ thanh toán qua /escrow/pay
+                    ApprovalStatus = ApprovalStatus.Approved, // Tutor đã accept request = Approved
+                    EnrolledAt = DateTime.UtcNow
+                };
+                await _uow.ClassAssigns.CreateAsync(newAssignment);
+
+                // 3. Copy schedule từ ClassRequestSchedules sang ClassSchedules
+                var newClassSchedules = request.ClassRequestSchedules.Select(reqSchedule => new ClassSchedule
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ClassId = newClass.Id,
+                    DayOfWeek = reqSchedule.DayOfWeek ?? 0,
+                    StartTime = reqSchedule.StartTime,
+                    EndTime = reqSchedule.EndTime
+                }).ToList();
+                await _context.ClassSchedules.AddRangeAsync(newClassSchedules);
+
+                // 4. Cập nhật ClassRequest status
+                request.Status = ClassRequestStatus.Matched; // Đã khớp gia sư, chờ thanh toán
+                await _uow.ClassRequests.UpdateAsync(request);
+
+                // 5. Tạo Calendar (Lessons và Schedule entries)
+                await _scheduleGenerationService.GenerateScheduleFromRequestAsync(
+                    newClass.Id,
+                    tutorProfileId,
+                    request.ClassStartDate ?? DateTime.UtcNow,
+                    request.ClassRequestSchedules
+                );
+
+                // 6. Save tất cả
+                await _uow.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+
+        return createdClassId; // Trả về ClassId nếu accept, null nếu reject
     }
 
     #endregion

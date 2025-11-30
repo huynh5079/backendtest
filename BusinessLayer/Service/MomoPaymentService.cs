@@ -451,21 +451,21 @@ public class MomoPaymentService : IMomoPaymentService
             Status = TransactionStatus.Succeeded,
             Amount = payment.Amount,
             Note = $"MoMo escrow payment {payment.OrderId}",
-            CounterpartyUserId = escrow.PayerUserId
+            CounterpartyUserId = escrow.StudentUserId
         }, ct);
 
         escrow.Status = EscrowStatus.Held;
-        escrow.PayerUserId = escrow.PayerUserId ?? payment.ContextId;
+        escrow.StudentUserId = escrow.StudentUserId ?? payment.ContextId;
 
         var notification = await _notificationService.CreateEscrowNotificationAsync(
-            escrow.PayerUserId ?? string.Empty,
+            escrow.StudentUserId ?? string.Empty,
             NotificationType.EscrowPaid,
             payment.Amount,
             escrow.ClassId ?? string.Empty,
             payment.Id,
             ct);
 
-        await _notificationService.SendRealTimeNotificationAsync(escrow.PayerUserId ?? string.Empty, notification, ct);
+        await _notificationService.SendRealTimeNotificationAsync(escrow.StudentUserId ?? string.Empty, notification, ct);
     }
 
     private async Task ApplyWalletDepositAsync(Payment payment, MomoIpnRequestDto request, CancellationToken ct)

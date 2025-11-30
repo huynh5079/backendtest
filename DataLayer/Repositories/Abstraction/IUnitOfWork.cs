@@ -33,6 +33,11 @@ namespace DataLayer.Repositories.Abstraction
         IPaymentLogRepository PaymentLogs { get; }
         IRescheduleRequestRepository RescheduleRequests { get; }
         IMessageRepository Messages { get; }
+        ICommissionRepository Commissions { get; }
+        IFavoriteTutorRepository FavoriteTutors { get; }
+        IConversationRepository Conversations { get; }
+        ITutorDepositEscrowRepository TutorDepositEscrows { get; }
+        ISystemSettingsRepository SystemSettings { get; }
 
         Task<int> SaveChangesAsync();
         Task<IDbContextTransaction> BeginTransactionAsync();
