@@ -159,7 +159,7 @@ namespace BusinessLayer.Service.ScheduleService
             DateTime startDate,
             DateTime endDate)
         {
-            // 1. Validate: Đứa trẻ này có phải con của Parent không?
+            // validate parent-child relationship
             var isChild = await _parentChildrenService.IsChildOfParentAsync(parentUserId, childProfileId);
             if (!isChild)
             {
@@ -181,32 +181,45 @@ namespace BusinessLayer.Service.ScheduleService
             DateTime startDate,
             DateTime endDate)
         {
-            // 1. Lấy danh sách ID các con
-            var childrenIds = await _parentChildrenService.GetChildrenIdsByParentUserIdAsync(parentUserId);
+            // take all children IDs of this parent
+            var childrenIds = await _parentChildrenService.GetChildrenInfoByParentUserIdAsync(parentUserId);
 
             if (!childrenIds.Any()) return new List<ScheduleEntryDto>();
 
             var allSchedules = new List<ScheduleEntryDto>();
 
-            // 2. Loop lấy lịch từng con
-            // (Có thể dùng Task.WhenAll để chạy song song cho nhanh)
-            foreach (var childId in childrenIds)
+            // loop through each child and get their schedule
+            // can be optimized with when parallel tasks if needed
+            foreach (var child in childrenIds)
             {
-                var childSchedule = await GetScheduleByStudentProfileIdInternal(childId, startDate, endDate);
+                var childSchedule = await GetScheduleByStudentProfileIdInternal(child.StudentId, startDate, endDate);
 
-                // (Optional) Gán thêm tên con vào Title để phụ huynh biết lịch của ai
-                // var childName = ... load name ...
-                // foreach(var s in childSchedule) s.Title = $"[{childName}] {s.Title}";
+                // create new list to avoid modifying reference
+                var labeledSchedule = childSchedule.Select(s =>
+                {
+                    // Clone
+                    return new ScheduleEntryDto
+                    {
+                        Id = s.Id,
+                        TutorId = s.TutorId,
+                        StartTime = s.StartTime,
+                        EndTime = s.EndTime,
+                        EntryType = s.EntryType,
+                        LessonId = s.LessonId,
+                        ClassId = s.ClassId,
+                        AttendanceStatus = s.AttendanceStatus,
+                        Title = $"[{child.FullName}] {s.Title}"
+                    };
+                });
 
                 allSchedules.AddRange(childSchedule);
             }
 
-            // 3. Sắp xếp tổng hợp theo thời gian
+            // Sort all entries by StartTime before returning
             return allSchedules.OrderBy(s => s.StartTime);
         }
 
-        // --- HELPER METHOD (Refactor từ GetStudentScheduleAsync) ---
-        // Hàm này query dựa trên ProfileID (không cần UserId) -> Dễ reuse cho cả Student và Parent
+        // query based on user directly
         private async Task<IEnumerable<ScheduleEntryDto>> GetScheduleByStudentProfileIdInternal(
             string studentProfileId,
             DateTime startDate,

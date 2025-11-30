@@ -1,4 +1,5 @@
 ﻿using BusinessLayer.DTOs.Admin.Parent;
+using BusinessLayer.DTOs.Profile;
 using DataLayer.Entities;
 using System;
 using System.Collections.Generic;
@@ -23,6 +24,8 @@ namespace BusinessLayer.Service.Interface
 
         // check if a student profile is a child of a parent
         Task<bool> IsChildOfParentAsync(string parentUserId, string studentProfileId);
+
+        Task<List<ChildDto>> GetChildrenInfoByParentUserIdAsync(string parentUserId);
     }
 
 }
