@@ -151,32 +151,200 @@ public class MomoPaymentService : IMomoPaymentService
                 return new MomoIpnResponseDto { ResultCode = 0, Message = "ORDER_NOT_FOUND" };
             }
 
-            await _uow.PaymentLogs.AddAsync(new PaymentLog
+            // Bước 1: Log thông tin IPN request để debug
+            _logger.LogInformation(
+                "Nhận IPN từ MoMo: OrderId={OrderId}, ResultCode={ResultCode}, TransId={TransId}, Message={Message}",
+                request.OrderId, request.ResultCode, request.TransId ?? "NULL", request.Message);
+
+            // Bước 2: Tạo và log IPN (sẽ được lưu sau)
+            var paymentLog = new PaymentLog
             {
                 PaymentId = payment.Id,
                 Event = "IPN",
                 Payload = JsonSerializer.Serialize(request, _jsonOptions)
-            }, ct);
+            };
+            await _uow.PaymentLogs.AddAsync(paymentLog, ct);
 
+            // Bước 3: Cập nhật thông tin payment cơ bản (ResultCode, Message)
             payment.ResultCode = request.ResultCode;
             payment.Message = request.Message;
 
+            // Bước 4: Xử lý dựa trên ResultCode
             if (request.ResultCode == 0)
             {
+                // Thanh toán thành công
                 if (payment.Status != PaymentStatus.Paid)
                 {
+                    // Cập nhật trạng thái payment thành Paid
                     payment.Status = PaymentStatus.Paid;
                     payment.PaidAt = DateTime.UtcNow;
-                    payment.TransactionId = request.TransId;
+                    
+                    // Cập nhật TransactionId nếu có
+                    if (!string.IsNullOrWhiteSpace(request.TransId))
+                    {
+                        payment.TransactionId = request.TransId;
+                        _logger.LogInformation(
+                            "Đã cập nhật TransactionId={TransactionId} cho payment {PaymentId} (OrderId: {OrderId})",
+                            request.TransId, payment.Id, payment.OrderId);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "MoMo IPN thành công nhưng TransId rỗng cho payment {PaymentId} (OrderId: {OrderId})",
+                            payment.Id, payment.OrderId);
+                    }
 
-                    await ApplyPaymentSuccessAsync(payment, request, ct);
+                    // QUAN TRỌNG: Lưu trạng thái payment và log TRƯỚC (trước khi xử lý business logic)
+                    // Đảm bảo trạng thái payment luôn được cập nhật ngay cả khi business logic thất bại
+                    await _uow.SaveChangesAsync();
 
+                    // Bước 4: Áp dụng business logic (escrow/wallet deposit) - bọc trong try-catch
+                    // Nếu bước này thất bại, trạng thái payment đã được lưu là Paid (đúng)
+                    try
+                    {
+                        _logger.LogInformation(
+                            "Bắt đầu áp dụng business logic cho payment {PaymentId} (OrderId: {OrderId}, ContextType: {ContextType}, ContextId: {ContextId})",
+                            payment.Id, payment.OrderId, payment.ContextType, payment.ContextId);
+                        
+                        await ApplyPaymentSuccessAsync(payment, request, ct);
+                        
+                        _logger.LogInformation(
+                            "Business logic đã được áp dụng thành công cho payment {PaymentId}. Đang lưu thay đổi...",
+                            payment.Id);
+                        
+                        // Lưu các thay đổi business logic (số dư ví, giao dịch, v.v.)
+                        var savedCount = await _uow.SaveChangesAsync();
+                        _logger.LogInformation(
+                            "Đã lưu thành công business logic cho payment {PaymentId} (OrderId: {OrderId}). Số entities đã lưu: {SavedCount}",
+                            payment.Id, payment.OrderId, savedCount);
+                        
+                        // Kiểm tra xem transaction đã được lưu chưa (chỉ cho WalletDeposit)
+                        if (payment.ContextType == PaymentContextType.WalletDeposit)
+                        {
+                            try
+                            {
+                                var wallet = await _walletService.GetMyWalletAsync(payment.ContextId, ct);
+                                var (transactions, total) = await _uow.Transactions.GetByWalletIdAsync(wallet.Id, 1, 10, ct);
+                                var hasTransaction = transactions.Any(t => 
+                                    t.Type == TransactionType.Credit && 
+                                    t.Status == TransactionStatus.Succeeded &&
+                                    t.Note != null && 
+                                    t.Note.Contains(payment.OrderId));
+                                
+                                if (hasTransaction)
+                                {
+                                    _logger.LogInformation(
+                                        "Đã xác nhận transaction đã được lưu vào database cho payment {PaymentId} (OrderId: {OrderId})",
+                                        payment.Id, payment.OrderId);
+                                }
+                                else
+                                {
+                                    _logger.LogWarning(
+                                        "CẢNH BÁO: Transaction CHƯA được tìm thấy trong database sau khi SaveChangesAsync cho payment {PaymentId} (OrderId: {OrderId})",
+                                        payment.Id, payment.OrderId);
+                                }
+                            }
+                            catch (Exception checkEx)
+                            {
+                                _logger.LogWarning(checkEx,
+                                    "Không thể kiểm tra transaction sau khi lưu cho payment {PaymentId} (OrderId: {OrderId})",
+                                    payment.Id, payment.OrderId);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Ghi log lỗi chi tiết với stack trace đầy đủ
+                        _logger.LogError(ex, 
+                            "LỖI NGHIÊM TRỌNG: Không thể áp dụng business logic cho payment {PaymentId} (OrderId: {OrderId}, ContextType: {ContextType}, ContextId: {ContextId}). " +
+                            "Trạng thái payment đã được cập nhật thành Paid nhưng tiền CHƯA được cộng vào ví. " +
+                            "Lỗi: {ErrorMessage}. StackTrace: {StackTrace}",
+                            payment.Id, payment.OrderId, payment.ContextType, payment.ContextId, ex.Message, ex.StackTrace);
+                        
+                        // Tùy chọn: Có thể tạo notification hoặc alert ở đây để admin điều tra
+                    }
+                }
+                else
+                {
+                    // Payment đã được đánh dấu là Paid (IPN trùng lặp hoặc retry)
+                    // QUAN TRỌNG: Kiểm tra xem business logic đã được thực thi chưa
+                    // Nếu chưa (có thể do lỗi lần trước), cần retry business logic
+                    
+                    _logger.LogInformation(
+                        "IPN retry cho payment đã Paid {PaymentId} (OrderId: {OrderId}). Kiểm tra business logic đã được thực thi chưa...",
+                        payment.Id, payment.OrderId);
+                    
+                    // Kiểm tra xem đã có transaction cho payment này chưa
+                    var hasTransaction = await CheckIfBusinessLogicAppliedAsync(payment, ct);
+                    
+                    if (!hasTransaction)
+                    {
+                        // Business logic chưa được thực thi (có thể do lỗi lần trước)
+                        // Retry business logic
+                        _logger.LogWarning(
+                            "Payment {PaymentId} (OrderId: {OrderId}) đã Paid nhưng business logic CHƯA được thực thi. Đang retry...",
+                            payment.Id, payment.OrderId);
+                        
+                        try
+                        {
+                            await ApplyPaymentSuccessAsync(payment, request, ct);
+                            await _uow.SaveChangesAsync();
+                            _logger.LogInformation(
+                                "Đã retry thành công business logic cho payment {PaymentId} (OrderId: {OrderId})",
+                                payment.Id, payment.OrderId);
+                        }
+                        catch (Exception retryEx)
+                        {
+                            _logger.LogError(retryEx,
+                                "LỖI khi retry business logic cho payment {PaymentId} (OrderId: {OrderId}). " +
+                                "Lỗi: {ErrorMessage}",
+                                payment.Id, payment.OrderId, retryEx.Message);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation(
+                            "Business logic đã được thực thi cho payment {PaymentId} (OrderId: {OrderId}). IPN retry bình thường.",
+                            payment.Id, payment.OrderId);
+                    }
+                    
+                    // Cập nhật TransactionId nếu chưa có hoặc nếu request có TransId mới
+                    if (string.IsNullOrWhiteSpace(payment.TransactionId) && !string.IsNullOrWhiteSpace(request.TransId))
+                    {
+                        payment.TransactionId = request.TransId;
+                        _logger.LogInformation(
+                            "Đã cập nhật TransactionId={TransactionId} cho payment đã Paid {PaymentId} (OrderId: {OrderId}) - IPN retry",
+                            request.TransId, payment.Id, payment.OrderId);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(request.TransId) && payment.TransactionId != request.TransId)
+                    {
+                        _logger.LogWarning(
+                            "IPN retry với TransId khác: Payment {PaymentId} có TransactionId={OldTransId}, IPN gửi TransId={NewTransId}",
+                            payment.Id, payment.TransactionId, request.TransId);
+                    }
+                    
+                    // Lưu log và cập nhật message/resultCode
                     await _uow.SaveChangesAsync();
                 }
             }
             else
             {
-                payment.Status = PaymentStatus.Failed;
+                // Thanh toán thất bại (ResultCode != 0)
+                // Kiểm tra xem có phải payment expired không
+                var messageLower = request.Message?.ToLowerInvariant() ?? string.Empty;
+                if (messageLower.Contains("hết hạn") || messageLower.Contains("expired") || 
+                    messageLower.Contains("không tồn tại") || messageLower.Contains("not found"))
+                {
+                    payment.Status = PaymentStatus.Expired;
+                    _logger.LogInformation(
+                        "Payment {PaymentId} (OrderId: {OrderId}) đã hết hạn. Message: {Message}",
+                        payment.Id, payment.OrderId, request.Message);
+                }
+                else
+                {
+                    payment.Status = PaymentStatus.Failed;
+                }
+                // Lưu trạng thái và log
                 await _uow.SaveChangesAsync();
             }
 
@@ -235,6 +403,31 @@ public class MomoPaymentService : IMomoPaymentService
         var momoResponse = JsonSerializer.Deserialize<MomoQueryResponse>(responseContent, _jsonOptions)
             ?? throw new InvalidOperationException("MoMo query response invalid.");
 
+        // Cập nhật payment status nếu cần
+        if (momoResponse.ResultCode != 0)
+        {
+            var messageLower = momoResponse.Message?.ToLowerInvariant() ?? string.Empty;
+            if (messageLower.Contains("hết hạn") || messageLower.Contains("expired") || 
+                messageLower.Contains("không tồn tại") || messageLower.Contains("not found"))
+            {
+                if (payment.Status != PaymentStatus.Expired)
+                {
+                    payment.Status = PaymentStatus.Expired;
+                    payment.Message = momoResponse.Message;
+                    await _uow.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Payment {PaymentId} (OrderId: {OrderId}) đã được cập nhật thành Expired từ Query. Message: {Message}",
+                        payment.Id, payment.OrderId, momoResponse.Message);
+                }
+            }
+            else if (payment.Status == PaymentStatus.Pending)
+            {
+                payment.Status = PaymentStatus.Failed;
+                payment.Message = momoResponse.Message;
+                await _uow.SaveChangesAsync();
+            }
+        }
+
         return new MomoQueryResponseDto
         {
             PaymentId = payment.Id,
@@ -242,7 +435,8 @@ public class MomoPaymentService : IMomoPaymentService
             ResultCode = momoResponse.ResultCode,
             Message = momoResponse.Message,
             TransId = momoResponse.TransId,
-            Status = momoResponse.ResultCode == 0 ? "SUCCESS" : "FAILED",
+            Status = payment.Status == PaymentStatus.Expired ? "EXPIRED" : 
+                     (momoResponse.ResultCode == 0 ? "SUCCESS" : "FAILED"),
             Amount = momoResponse.Amount,
             ResponseTime = momoResponse.ResponseTime
         };
@@ -470,31 +664,87 @@ public class MomoPaymentService : IMomoPaymentService
 
     private async Task ApplyWalletDepositAsync(Payment payment, MomoIpnRequestDto request, CancellationToken ct)
     {
-        var wallet = await _walletService.GetMyWalletAsync(payment.ContextId, ct);
-        wallet.Balance += payment.Amount;
-        await _uow.Wallets.Update(wallet);
+        _logger.LogInformation(
+            "Bắt đầu cộng tiền vào ví cho payment {PaymentId} (OrderId: {OrderId}, UserId: {UserId}, Amount: {Amount})",
+            payment.Id, payment.OrderId, payment.ContextId, payment.Amount);
 
-        var transaction = new Transaction
+        try
         {
-            WalletId = wallet.Id,
-            Type = TransactionType.Credit,
-            Status = TransactionStatus.Succeeded,
-            Amount = payment.Amount,
-            Note = $"MoMo wallet deposit {payment.OrderId}",
-            CounterpartyUserId = payment.ContextId
-        };
+            // Bước 1: Lấy hoặc tạo wallet
+            var wallet = await _walletService.GetMyWalletAsync(payment.ContextId, ct);
+            _logger.LogInformation(
+                "Đã lấy wallet {WalletId} cho user {UserId}. Số dư hiện tại: {CurrentBalance}",
+                wallet.Id, payment.ContextId, wallet.Balance);
 
-        await _uow.Transactions.AddAsync(transaction, ct);
+            // Bước 2: Cộng tiền vào ví
+            var oldBalance = wallet.Balance;
+            wallet.Balance += payment.Amount;
+            await _uow.Wallets.Update(wallet);
+            _logger.LogInformation(
+                "Đã cập nhật số dư ví: {OldBalance} -> {NewBalance} (+{Amount})",
+                oldBalance, wallet.Balance, payment.Amount);
 
-        var notification = await _notificationService.CreateWalletNotificationAsync(
-            payment.ContextId,
-            NotificationType.WalletDeposit,
-            payment.Amount,
-            $"Nạp ví qua MoMo (order {payment.OrderId})",
-            payment.Id,
-            ct);
+            // Bước 3: Tạo transaction record
+            // Lưu TransactionId từ MoMo vào Note để hiển thị trong lịch sử
+            // Ưu tiên lấy từ payment.TransactionId, nếu chưa có thì lấy từ request.TransId
+            var momoTransId = !string.IsNullOrWhiteSpace(payment.TransactionId) 
+                ? payment.TransactionId 
+                : (!string.IsNullOrWhiteSpace(request.TransId) ? request.TransId : null);
+            
+            var note = !string.IsNullOrWhiteSpace(momoTransId)
+                ? $"MoMo wallet deposit {payment.OrderId} (TransId: {momoTransId})"
+                : $"MoMo wallet deposit {payment.OrderId}";
+            
+            var transaction = new Transaction
+            {
+                WalletId = wallet.Id,
+                Type = TransactionType.Credit,
+                Status = TransactionStatus.Succeeded,
+                Amount = payment.Amount,
+                Note = note,
+                CounterpartyUserId = payment.ContextId
+            };
 
-        await _notificationService.SendRealTimeNotificationAsync(payment.ContextId, notification, ct);
+            await _uow.Transactions.AddAsync(transaction, ct);
+            _logger.LogInformation(
+                "Đã tạo transaction object cho wallet {WalletId}. TransactionId={TransactionId}, WalletId={WalletId}, Amount={Amount}, Type={Type}, Note={Note}. " +
+                "Transaction sẽ được lưu khi SaveChangesAsync được gọi.",
+                wallet.Id, transaction.Id, wallet.Id, transaction.Amount, transaction.Type, transaction.Note);
+
+            // Bước 4: Tạo và gửi notification (nếu lỗi ở đây không ảnh hưởng đến việc cộng tiền)
+            try
+            {
+                var notification = await _notificationService.CreateWalletNotificationAsync(
+                    payment.ContextId,
+                    NotificationType.WalletDeposit,
+                    payment.Amount,
+                    $"Nạp ví qua MoMo (order {payment.OrderId})",
+                    payment.Id,
+                    ct);
+
+                await _notificationService.SendRealTimeNotificationAsync(payment.ContextId, notification, ct);
+                _logger.LogInformation("Đã gửi notification thành công cho user {UserId}", payment.ContextId);
+            }
+            catch (Exception notifEx)
+            {
+                // Notification lỗi không ảnh hưởng đến việc cộng tiền
+                _logger.LogWarning(notifEx,
+                    "Không thể gửi notification cho user {UserId} nhưng tiền đã được cộng vào ví",
+                    payment.ContextId);
+            }
+
+            _logger.LogInformation(
+                "Hoàn thành cộng tiền vào ví cho payment {PaymentId} (OrderId: {OrderId})",
+                payment.Id, payment.OrderId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "LỖI khi cộng tiền vào ví cho payment {PaymentId} (OrderId: {OrderId}, UserId: {UserId}, Amount: {Amount}). " +
+                "Lỗi: {ErrorMessage}. StackTrace: {StackTrace}",
+                payment.Id, payment.OrderId, payment.ContextId, payment.Amount, ex.Message, ex.StackTrace);
+            throw; // Re-throw để catch ở trên có thể log và xử lý
+        }
     }
 
     private async Task<Wallet> CreateWalletAsync(string userId, CancellationToken ct)
@@ -503,6 +753,46 @@ public class MomoPaymentService : IMomoPaymentService
         await _uow.Wallets.AddAsync(wallet, ct);
         await _uow.SaveChangesAsync();
         return wallet;
+    }
+
+    /// <summary>
+    /// Kiểm tra xem business logic đã được thực thi cho payment chưa
+    /// Bằng cách kiểm tra xem đã có transaction với note chứa OrderId chưa
+    /// </summary>
+    private async Task<bool> CheckIfBusinessLogicAppliedAsync(Payment payment, CancellationToken ct)
+    {
+        try
+        {
+            switch (payment.ContextType)
+            {
+                case PaymentContextType.WalletDeposit:
+                    // Kiểm tra xem đã có transaction Credit với note chứa OrderId chưa
+                    var wallet = await _walletService.GetMyWalletAsync(payment.ContextId, ct);
+                    var (transactions, _) = await _uow.Transactions.GetByWalletIdAsync(wallet.Id, 1, 10, ct);
+                    var hasTransaction = transactions.Any(t => 
+                        t.Type == TransactionType.Credit && 
+                        t.Status == TransactionStatus.Succeeded &&
+                        t.Note != null && 
+                        t.Note.Contains(payment.OrderId));
+                    return hasTransaction;
+
+                case PaymentContextType.Escrow:
+                    // Kiểm tra xem escrow đã được đánh dấu là Held chưa
+                    var escrow = await _uow.Escrows.GetByIdAsync(payment.ContextId, ct);
+                    if (escrow == null) return false;
+                    return escrow.Status == EscrowStatus.Held;
+
+                default:
+                    return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Không thể kiểm tra business logic cho payment {PaymentId} (OrderId: {OrderId}). Giả định là chưa thực thi.",
+                payment.Id, payment.OrderId);
+            return false; // Nếu không kiểm tra được, giả định là chưa thực thi để retry
+        }
     }
 
     #endregion

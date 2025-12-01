@@ -1,9 +1,11 @@
 ﻿using BusinessLayer.DTOs.Schedule.Class;
 using BusinessLayer.DTOs.Schedule.ClassAssign;
+using BusinessLayer.DTOs.Wallet;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
 using DataLayer.Enum;
+using DataLayer.Repositories.Abstraction;
 using DataLayer.Repositories.Abstraction.Schedule;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -17,22 +19,28 @@ namespace BusinessLayer.Service.ScheduleService
     {
         private readonly TpeduContext _context;
         private readonly IScheduleUnitOfWork _uow;
+        private readonly IUnitOfWork _mainUow;
         private readonly IStudentProfileService _studentProfileService;
         private readonly ITutorProfileService _tutorProfileService;
         private readonly IScheduleGenerationService _scheduleGenerationService;
+        private readonly IEscrowService _escrowService;
 
         public AssignService(
             TpeduContext context,
             IScheduleUnitOfWork uow,
+            IUnitOfWork mainUow,
             IStudentProfileService studentProfileService,
             ITutorProfileService tutorProfileService,
-            IScheduleGenerationService scheduleGenerationService)
+            IScheduleGenerationService scheduleGenerationService,
+            IEscrowService escrowService)
         {
             _context = context;
             _uow = uow;
+            _mainUow = mainUow;
             _studentProfileService = studentProfileService;
             _tutorProfileService = tutorProfileService;
             _scheduleGenerationService = scheduleGenerationService;
+            _escrowService = escrowService;
         }
 
         public async Task<ClassDto> AssignRecurringClassAsync(string studentUserId, string classId)
@@ -121,7 +129,8 @@ namespace BusinessLayer.Service.ScheduleService
         }
 
         /// <summary>
-        /// [TRANSACTION] student withdraw from class
+        /// [TRANSACTION] Student withdraw from class - Học sinh hủy enrollment
+        /// Xử lý refund escrow cho học sinh khi rút khỏi lớp
         /// </summary>
         public async Task<bool> WithdrawFromClassAsync(string studentUserId, string classId)
         {
@@ -155,8 +164,37 @@ namespace BusinessLayer.Service.ScheduleService
                         throw new InvalidOperationException($"Không thể rút khỏi lớp học đang ở trạng thái '{targetClass.Status}'.");
                     }
 
-                    // wallet refund
-                    // assume done
+                    // Xử lý refund escrow cho học sinh khi rút khỏi lớp
+                    // Refund full (100%) cho học sinh
+                    var escrows = await _mainUow.Escrows.GetAllAsync(
+                        filter: e => e.ClassAssignId == assignment.Id && 
+                                   (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.PartiallyReleased));
+
+                    foreach (var esc in escrows)
+                    {
+                        if (esc.Status == EscrowStatus.Held)
+                        {
+                            // Refund full cho học sinh
+                            await _escrowService.RefundAsync(studentUserId, new RefundEscrowRequest { EscrowId = esc.Id });
+                        }
+                        else if (esc.Status == EscrowStatus.PartiallyReleased)
+                        {
+                            // Đã release một phần cho tutor → Refund phần còn lại (100% của phần còn lại)
+                            decimal remainingPercentage = 1.0m - (esc.ReleasedAmount / esc.GrossAmount);
+                            if (remainingPercentage > 0)
+                            {
+                                await _escrowService.PartialRefundAsync(studentUserId, new PartialRefundEscrowRequest
+                                {
+                                    EscrowId = esc.Id,
+                                    RefundPercentage = remainingPercentage
+                                });
+                            }
+                        }
+                    }
+
+                    // Cập nhật PaymentStatus của ClassAssign
+                    assignment.PaymentStatus = PaymentStatus.Refunded;
+                    await _uow.ClassAssigns.UpdateAsync(assignment);
 
                     // delete ClassAssign
                     _context.ClassAssigns.Remove(assignment); //using _context to avoid tracking issues
@@ -212,6 +250,7 @@ namespace BusinessLayer.Service.ScheduleService
 
                     // save all
                     await _uow.SaveChangesAsync();
+                    await _mainUow.SaveChangesAsync();
                     await transaction.CommitAsync();
                 }
                 catch (Exception)

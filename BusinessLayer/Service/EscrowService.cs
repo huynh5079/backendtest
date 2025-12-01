@@ -18,10 +18,10 @@ namespace BusinessLayer.Service
         private readonly SystemWalletOptions _systemWalletOptions;
         private readonly INotificationService _notificationService;
         private readonly ICommissionService _commissionService;
-        
+
         public EscrowService(
-            IUnitOfWork uow, 
-            IOptions<SystemWalletOptions> systemWalletOptions, 
+            IUnitOfWork uow,
+            IOptions<SystemWalletOptions> systemWalletOptions,
             INotificationService notificationService,
             ICommissionService commissionService)
         {
@@ -37,10 +37,10 @@ namespace BusinessLayer.Service
         private async Task<decimal> CalculateDepositAmountAsync(decimal classPrice, CancellationToken ct = default)
         {
             var settings = await _uow.SystemSettings.GetOrCreateSettingsAsync(ct);
-            
+
             // Tính % học phí (ví dụ: 10% = 0.10)
             var depositAmount = Math.Round(classPrice * settings.DepositRate, 2, MidpointRounding.AwayFromZero);
-            
+
             return depositAmount;
         }
 
@@ -62,7 +62,7 @@ namespace BusinessLayer.Service
             // 2. Kiểm tra có học sinh đã đóng tiền chưa
             var paidStudents = await _uow.ClassAssigns.GetAllAsync(
                 filter: ca => ca.ClassId == classEntity.Id && ca.PaymentStatus == PaymentStatus.Paid);
-            
+
             if (!paidStudents.Any())
             {
                 return false; // Chưa có học sinh nào đóng tiền
@@ -103,7 +103,7 @@ namespace BusinessLayer.Service
             // 2) Lấy ClassAssign - Mỗi học sinh = 1 Escrow riêng
             var payerUserId = string.IsNullOrWhiteSpace(req.PayerStudentUserId) ? actorUserId : req.PayerStudentUserId;
             string? studentProfileId = null;
-            
+
             // Lấy studentProfileId từ payerUserId (có thể là student hoặc parent)
             if (!string.IsNullOrWhiteSpace(req.PayerStudentUserId))
             {
@@ -115,7 +115,7 @@ namespace BusinessLayer.Service
                 var studentProfile = await _uow.StudentProfiles.GetByUserIdAsync(payerUserId);
                 studentProfileId = studentProfile?.Id;
             }
-            
+
             if (string.IsNullOrWhiteSpace(studentProfileId))
             {
                 return new OperationResult { Status = "Fail", Message = "Không tìm thấy hồ sơ học sinh." };
@@ -151,7 +151,7 @@ namespace BusinessLayer.Service
 
             decimal grossAmount;
             bool isOneToOne = classEntity.StudentLimit == 1;
-            
+
             if (isOneToOne)
             {
                 // Lớp 1-1: học sinh trả toàn bộ
@@ -165,7 +165,7 @@ namespace BusinessLayer.Service
                 {
                     return new OperationResult { Status = "Fail", Message = "Lớp học chưa có số lượng học sinh tối đa." };
                 }
-                
+
                 // Chia đều: Class.Price / StudentLimit
                 grossAmount = Math.Round(classEntity.Price.Value / classEntity.StudentLimit, 2, MidpointRounding.AwayFromZero);
             }
@@ -178,7 +178,7 @@ namespace BusinessLayer.Service
             {
                 return new OperationResult { Status = "Fail", Message = "Lớp học chưa có gia sư." };
             }
-            
+
             var tutorProfile = await _uow.TutorProfiles.GetByIdAsync(classEntity.TutorId);
             if (tutorProfile == null || string.IsNullOrWhiteSpace(tutorProfile.UserId))
             {
@@ -195,7 +195,7 @@ namespace BusinessLayer.Service
 
             payerWallet.Balance -= grossAmount;
             adminWallet.Balance += grossAmount;
-            
+
             await _uow.Wallets.Update(payerWallet);
             await _uow.Wallets.Update(adminWallet);
 
@@ -240,18 +240,18 @@ namespace BusinessLayer.Service
 
             // Tạo notification sau khi save
             var notification = await _notificationService.CreateEscrowNotificationAsync(
-                payerUserId, 
-                NotificationType.EscrowPaid, 
-                grossAmount, 
-                req.ClassId, 
-                esc.Id, 
+                payerUserId,
+                NotificationType.EscrowPaid,
+                grossAmount,
+                req.ClassId,
+                esc.Id,
                 ct);
-            
+
             await _uow.SaveChangesAsync(); // Save notification và ClassAssign
-            
+
             // Gửi real-time notification sau khi save
             await _notificationService.SendRealTimeNotificationAsync(payerUserId, notification, ct);
-            
+
             await tx.CommitAsync();
 
             // Tính toán các giá trị để trả về
@@ -282,7 +282,7 @@ namespace BusinessLayer.Service
         {
             var cls = await _uow.Classes.GetByIdAsync(classId);
             if (cls == null || string.IsNullOrWhiteSpace(cls.TutorId)) return null;
-        
+
             var tutorProfile = await _uow.TutorProfiles.GetByIdAsync(cls.TutorId);
             return tutorProfile?.UserId;
         }
@@ -303,7 +303,7 @@ namespace BusinessLayer.Service
 
             adminWallet.Balance -= esc.GrossAmount;
             payerWallet.Balance += esc.GrossAmount;
-            
+
             // Attach wallets để EF track changes
             await _uow.Wallets.Update(adminWallet);
             await _uow.Wallets.Update(payerWallet);
@@ -336,18 +336,18 @@ namespace BusinessLayer.Service
 
             // Tạo notification sau khi save
             var notification = await _notificationService.CreateEscrowNotificationAsync(
-                esc.StudentUserId, 
-                NotificationType.EscrowRefunded, 
-                esc.GrossAmount, 
-                esc.ClassId, 
-                esc.Id, 
+                esc.StudentUserId,
+                NotificationType.EscrowRefunded,
+                esc.GrossAmount,
+                esc.ClassId,
+                esc.Id,
                 ct);
-            
+
             await _uow.SaveChangesAsync(); // Save notification
-            
+
             // Gửi real-time notification sau khi save
             await _notificationService.SendRealTimeNotificationAsync(esc.StudentUserId, notification, ct);
-            
+
             await tx.CommitAsync();
             return new OperationResult { Status = "Ok" };
         }
@@ -398,7 +398,7 @@ namespace BusinessLayer.Service
                 filter: e => e.ClassId == req.ClassId && e.Status == EscrowStatus.Held);
             if (!escrows.Any())
                 return new OperationResult { Status = "Fail", Message = "Không tìm thấy escrow cho lớp học này." };
-            
+
             // Lấy escrow đầu tiên để tính deposit (deposit tính theo tổng học phí của lớp)
             var firstEscrow = escrows.First();
 
@@ -418,7 +418,7 @@ namespace BusinessLayer.Service
             // Với lớp group: tính deposit dựa trên tổng học phí (Class.Price), không phải từng escrow
             if (classEntity.Price == null || classEntity.Price <= 0)
                 return new OperationResult { Status = "Fail", Message = "Lớp học chưa có giá." };
-            
+
             var settings = await _uow.SystemSettings.GetOrCreateSettingsAsync(ct);
             decimal depositRate = settings.DepositRate; // Lưu snapshot này
             // Deposit tính theo tổng học phí của lớp (Class.Price), không phải từng escrow
@@ -492,7 +492,7 @@ namespace BusinessLayer.Service
             // 9) Gửi notification cho tất cả học sinh đã thanh toán trong lớp
             var allPaidEscrows = await _uow.Escrows.GetAllAsync(
                 filter: e => e.ClassId == req.ClassId && e.Status == EscrowStatus.Held);
-            
+
             foreach (var paidEscrow in allPaidEscrows)
             {
                 var studentNotification = await _notificationService.CreateEscrowNotificationAsync(
@@ -567,7 +567,7 @@ namespace BusinessLayer.Service
             // Kiểm tra xem đã hoàn cọc chưa bằng cách check status của tutorDeposit
             bool shouldRefundDeposit = tutorDeposit.Status == TutorDepositStatus.Held;
             var depositAmount = tutorDeposit.DepositAmount;
-            
+
             if (shouldRefundDeposit)
             {
                 if (adminWallet.Balance < depositAmount)
@@ -652,8 +652,8 @@ namespace BusinessLayer.Service
             }
 
             await tx.CommitAsync();
-            
-            var message = shouldRefundDeposit 
+
+            var message = shouldRefundDeposit
                 ? $"Đã giải ngân {net:N0} VND học phí + hoàn {depositAmount:N0} VND cọc. Commission: {commission:N0} VND."
                 : $"Đã giải ngân {net:N0} VND học phí. Commission: {commission:N0} VND.";
             return new OperationResult { Status = "Ok", Message = message };
@@ -685,7 +685,7 @@ namespace BusinessLayer.Service
                 // Trả về học sinh - với lớp group, chia đều cho tất cả học sinh đã thanh toán
                 var paidEscrows = await _uow.Escrows.GetAllAsync(
                     filter: e => e.ClassId == tutorDeposit.ClassId && e.Status == EscrowStatus.Held);
-                
+
                 if (!paidEscrows.Any())
                 {
                     return new OperationResult { Status = "Fail", Message = "Không tìm thấy học sinh đã thanh toán để trả tiền." };
@@ -693,14 +693,14 @@ namespace BusinessLayer.Service
 
                 // Chia đều depositAmount cho tất cả học sinh đã thanh toán
                 decimal refundPerStudent = Math.Round(depositAmount / paidEscrows.Count(), 2, MidpointRounding.AwayFromZero);
-                
+
                 if (adminWallet.Balance < depositAmount)
                     return new OperationResult { Status = "Fail", Message = "Số dư admin không đủ" };
 
                 foreach (var esc in paidEscrows)
                 {
                     var studentWallet = await GetOrCreateWalletAsync(esc.StudentUserId, ct);
-                    
+
                     adminWallet.Balance -= refundPerStudent;
                     studentWallet.Balance += refundPerStudent;
 
@@ -726,7 +726,7 @@ namespace BusinessLayer.Service
                         CounterpartyUserId = adminUserId
                     }, ct);
                 }
-                
+
                 await _uow.Wallets.Update(adminWallet);
             }
             else
@@ -754,6 +754,184 @@ namespace BusinessLayer.Service
             await tx.CommitAsync();
 
             return new OperationResult { Status = "Ok", Message = $"Đã tịch thu tiền cọc {depositAmount:N0} VND." };
+        }
+
+        /// <summary>
+        /// Partial release escrow - Release một phần cho tutor (khi đã dạy một phần)
+        /// </summary>
+        public async Task<OperationResult> PartialReleaseAsync(string adminUserId, PartialReleaseEscrowRequest req, CancellationToken ct = default)
+        {
+            var esc = await _uow.Escrows.GetByIdAsync(req.EscrowId, ct);
+            if (esc == null) return new OperationResult { Status = "Fail", Message = "Escrow không tồn tại" };
+            if (esc.Status != EscrowStatus.Held && esc.Status != EscrowStatus.PartiallyReleased)
+                return new OperationResult { Status = "Fail", Message = "Escrow không ở trạng thái hợp lệ để partial release" };
+
+            if (req.ReleasePercentage <= 0 || req.ReleasePercentage > 1)
+                return new OperationResult { Status = "Fail", Message = "ReleasePercentage phải trong khoảng (0, 1]" };
+
+            using var tx = await _uow.BeginTransactionAsync();
+
+            var adminWallet = await GetOrCreateWalletAsync(_systemWalletOptions.SystemWalletUserId, ct);
+            var tutorWallet = await GetOrCreateWalletAsync(esc.TutorUserId, ct);
+
+            // Tính số tiền còn lại có thể release
+            decimal remainingAmount = esc.GrossAmount - esc.ReleasedAmount;
+            decimal releaseAmount = Math.Round(remainingAmount * req.ReleasePercentage, 2, MidpointRounding.AwayFromZero);
+
+            if (releaseAmount <= 0)
+                return new OperationResult { Status = "Fail", Message = "Không còn tiền để release" };
+
+            // Tính commission và net
+            var commission = Math.Round(releaseAmount * esc.CommissionRateSnapshot, 2, MidpointRounding.AwayFromZero);
+            var net = releaseAmount - commission;
+
+            if (adminWallet.Balance < net)
+                return new OperationResult { Status = "Fail", Message = "Số dư admin không đủ để giải ngân" };
+
+            adminWallet.Balance -= net;
+            tutorWallet.Balance += net;
+
+            await _uow.Transactions.AddAsync(new Transaction
+            {
+                WalletId = adminWallet.Id,
+                Type = TransactionType.PayoutOut,
+                Status = TransactionStatus.Succeeded,
+                Amount = -net,
+                Note = $"Partial release {req.ReleasePercentage:P0} for escrow {esc.Id}",
+                CounterpartyUserId = esc.TutorUserId
+            }, ct);
+
+            await _uow.Transactions.AddAsync(new Transaction
+            {
+                WalletId = tutorWallet.Id,
+                Type = TransactionType.PayoutIn,
+                Status = TransactionStatus.Succeeded,
+                Amount = net,
+                Note = $"Partial payout received for escrow {esc.Id}",
+                CounterpartyUserId = adminUserId
+            }, ct);
+
+            // Cập nhật escrow
+            esc.ReleasedAmount += releaseAmount;
+            if (esc.ReleasedAmount >= esc.GrossAmount)
+            {
+                esc.Status = EscrowStatus.Released;
+            }
+            else
+            {
+                esc.Status = EscrowStatus.PartiallyReleased;
+            }
+            await _uow.Escrows.UpdateAsync(esc);
+            await _uow.SaveChangesAsync();
+
+            // Ghi commission
+            await _uow.Transactions.AddAsync(new Transaction
+            {
+                WalletId = adminWallet.Id,
+                Type = TransactionType.Commission,
+                Status = TransactionStatus.Succeeded,
+                Amount = commission,
+                Note = $"Commission from partial release escrow {esc.Id}",
+                CounterpartyUserId = esc.TutorUserId
+            }, ct);
+
+            await tx.CommitAsync();
+
+            // Notification cho tutor
+            var notification = await _notificationService.CreateEscrowNotificationAsync(
+                esc.TutorUserId,
+                NotificationType.EscrowReleased,
+                net,
+                esc.ClassId,
+                esc.Id,
+                ct);
+            await _notificationService.SendRealTimeNotificationAsync(esc.TutorUserId, notification, ct);
+
+            return new OperationResult
+            {
+                Status = "Ok",
+                Message = $"Đã giải ngân {releaseAmount:N0} VND ({req.ReleasePercentage:P0}) cho tutor."
+            };
+        }
+
+        /// <summary>
+        /// Partial refund escrow - Refund một phần cho student (phần chưa học)
+        /// </summary>
+        public async Task<OperationResult> PartialRefundAsync(string adminUserId, PartialRefundEscrowRequest req, CancellationToken ct = default)
+        {
+            var esc = await _uow.Escrows.GetByIdAsync(req.EscrowId, ct);
+            if (esc == null) return new OperationResult { Status = "Fail", Message = "Escrow không tồn tại" };
+            if (esc.Status != EscrowStatus.Held && esc.Status != EscrowStatus.PartiallyReleased)
+                return new OperationResult { Status = "Fail", Message = "Escrow không ở trạng thái hợp lệ để partial refund" };
+
+            if (req.RefundPercentage <= 0 || req.RefundPercentage > 1)
+                return new OperationResult { Status = "Fail", Message = "RefundPercentage phải trong khoảng (0, 1]" };
+
+            using var tx = await _uow.BeginTransactionAsync();
+
+            var adminWallet = await GetOrCreateWalletAsync(_systemWalletOptions.SystemWalletUserId, ct);
+            var studentWallet = await GetOrCreateWalletAsync(esc.StudentUserId, ct);
+
+            // Tính số tiền còn lại có thể refund (chưa release)
+            decimal remainingAmount = esc.GrossAmount - esc.ReleasedAmount - esc.RefundedAmount;
+            decimal refundAmount = Math.Round(remainingAmount * req.RefundPercentage, 2, MidpointRounding.AwayFromZero);
+
+            if (refundAmount <= 0)
+                return new OperationResult { Status = "Fail", Message = "Không còn tiền để refund" };
+
+            if (adminWallet.Balance < refundAmount)
+                return new OperationResult { Status = "Fail", Message = "Số dư admin không đủ" };
+
+            adminWallet.Balance -= refundAmount;
+            studentWallet.Balance += refundAmount;
+
+            await _uow.Transactions.AddAsync(new Transaction
+            {
+                WalletId = adminWallet.Id,
+                Type = TransactionType.RefundOut,
+                Status = TransactionStatus.Succeeded,
+                Amount = -refundAmount,
+                Note = $"Partial refund {req.RefundPercentage:P0} for escrow {esc.Id}",
+                CounterpartyUserId = esc.StudentUserId
+            }, ct);
+
+            await _uow.Transactions.AddAsync(new Transaction
+            {
+                WalletId = studentWallet.Id,
+                Type = TransactionType.RefundIn,
+                Status = TransactionStatus.Succeeded,
+                Amount = refundAmount,
+                Note = $"Partial refund received for escrow {esc.Id}",
+                CounterpartyUserId = adminUserId
+            }, ct);
+
+            // Cập nhật escrow
+            esc.RefundedAmount += refundAmount;
+            if (esc.RefundedAmount + esc.ReleasedAmount >= esc.GrossAmount)
+            {
+                esc.Status = EscrowStatus.Refunded;
+                esc.RefundedAt = DateTime.UtcNow;
+            }
+            await _uow.Escrows.UpdateAsync(esc);
+            await _uow.SaveChangesAsync();
+
+            await tx.CommitAsync();
+
+            // Notification cho student
+            var notification = await _notificationService.CreateEscrowNotificationAsync(
+                esc.StudentUserId,
+                NotificationType.EscrowRefunded,
+                refundAmount,
+                esc.ClassId,
+                esc.Id,
+                ct);
+            await _notificationService.SendRealTimeNotificationAsync(esc.StudentUserId, notification, ct);
+
+            return new OperationResult
+            {
+                Status = "Ok",
+                Message = $"Đã hoàn {refundAmount:N0} VND ({req.RefundPercentage:P0}) cho học sinh."
+            };
         }
     }
 }

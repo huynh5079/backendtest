@@ -21,6 +21,18 @@ namespace BusinessLayer.DTOs.Wallet
         public string EscrowId { get; set; } = default!;
     }
 
+    public class PartialReleaseEscrowRequest
+    {
+        public string EscrowId { get; set; } = default!;
+        public decimal ReleasePercentage { get; set; } // Phần trăm cần release (0.0 - 1.0), ví dụ: 0.5 = 50%
+    }
+
+    public class PartialRefundEscrowRequest
+    {
+        public string EscrowId { get; set; } = default!;
+        public decimal RefundPercentage { get; set; } // Phần trăm cần refund (0.0 - 1.0), ví dụ: 0.8 = 80%
+    }
+
     public class ProcessTutorDepositRequest
     {
         public string ClassId { get; set; } = default!;

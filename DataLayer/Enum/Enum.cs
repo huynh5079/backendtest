@@ -186,6 +186,20 @@ namespace DataLayer.Enum
         Completed,  // Lớp đã kết thúc
         Cancelled   // Lớp đã bị hủy
     }
+
+    // Lý do hủy lớp (Admin cancel reason)
+    public enum ClassCancelReason
+    {
+        SystemError,        // Lỗi hệ thống/setup 
+        TutorFault,        // Tutor lỗi - bỏ giữa chừng, dạy tệ, vi phạm 
+        StudentFault,      // HS lỗi - không hợp tác, no-show 
+        MutualConsent,     // Hai bên đồng ý dừng 
+        PolicyViolation,   // Vi phạm policy
+        DuplicateClass,    // Lớp trùng
+        IncorrectInfo,     // Thông tin sai (giá, lịch, môn học)
+        Other              // Lý do khác
+    }
+
     //Schedule Entry Type  
     public enum EntryType
     {
@@ -212,6 +226,7 @@ namespace DataLayer.Enum
         EscrowReleased,           // Escrow đã được giải ngân (cho tutor)
         EscrowRefunded,           // Escrow đã được hoàn tiền (cho payer)
         PayoutReceived,           // Nhận thanh toán từ escrow (cho tutor)
+        ClassCancelled,           // Lớp học đã bị hủy (gửi cho tutor và HS)
 
         // Reschedule Lessons
         LessonRescheduleRequest,  // Gửi cho Student/Parent khi có yêu cầu mới

@@ -305,13 +305,16 @@ public class ClassRequestService : IClassRequestService
         // Accept: Tạo Class + ClassAssign + Schedule
         string? createdClassId = null;
         var executionStrategy = _context.Database.CreateExecutionStrategy();
-        await executionStrategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            await executionStrategy.ExecuteAsync(async () =>
             {
-                // 1. Tạo Class từ ClassRequest
-                var newClass = new Class
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // Kiểm tra duplicate class trước khi tạo
+                    await CheckForDuplicateClassFromRequestAsync(tutorProfileId, request);
+
+                    // 1. Tạo Class từ ClassRequest
+                    var newClass = new Class
                 {
                     Id = Guid.NewGuid().ToString(),
                     TutorId = tutorProfileId,
@@ -580,5 +583,69 @@ public class ClassRequestService : IClassRequestService
         }
 
         return request;
+    }
+
+    /// <summary>
+    ///  Kiểm tra duplicate class khi tạo từ ClassRequest
+    /// </summary>
+    private async Task CheckForDuplicateClassFromRequestAsync(string tutorId, ClassRequest request)
+    {
+        if (request.Budget == null)
+            return; // Không kiểm tra nếu không có budget
+
+        // Tìm các lớp học của cùng gia sư với cùng môn học, cấp độ và mode
+        var existingClasses = await _uow.Classes.GetAllAsync(
+            filter: c => c.TutorId == tutorId
+                       && c.Subject == request.Subject
+                       && c.EducationLevel == request.EducationLevel
+                       && c.Mode == request.Mode
+                       && c.DeletedAt == null
+                       && (c.Status == ClassStatus.Pending || c.Status == ClassStatus.Active || c.Status == ClassStatus.Ongoing),
+            includes: q => q.Include(c => c.ClassSchedules)
+        );
+
+        if (!existingClasses.Any())
+            return; // Không có lớp nào tương tự
+
+        // Kiểm tra giá tương tự (trong khoảng ±10%)
+        decimal priceTolerance = request.Budget.Value * 0.1m;
+        var similarPriceClasses = existingClasses
+            .Where(c => c.Price.HasValue && Math.Abs(c.Price.Value - request.Budget.Value) <= priceTolerance)
+            .ToList();
+
+        if (!similarPriceClasses.Any())
+            return; // Không có lớp nào có giá tương tự
+
+        // Kiểm tra lịch học trùng lặp
+        if (request.ClassRequestSchedules == null || !request.ClassRequestSchedules.Any())
+            return;
+
+        foreach (var existingClass in similarPriceClasses)
+        {
+            if (existingClass.ClassSchedules == null || !existingClass.ClassSchedules.Any())
+                continue;
+
+            // So sánh từng lịch học trong request với các lịch học trong lớp hiện có
+            foreach (var newSchedule in request.ClassRequestSchedules)
+            {
+                foreach (var existingSchedule in existingClass.ClassSchedules)
+                {
+                    // Kiểm tra cùng ngày trong tuần
+                    if (existingSchedule.DayOfWeek == newSchedule.DayOfWeek)
+                    {
+                        // Kiểm tra thời gian chồng chéo
+                        if (newSchedule.StartTime < existingSchedule.EndTime && 
+                            existingSchedule.StartTime < newSchedule.EndTime)
+                        {
+                            throw new InvalidOperationException(
+                                $"Đã tồn tại lớp học tương tự (ID: {existingClass.Id}, Tiêu đề: {existingClass.Title}) " +
+                                $"với cùng môn học, cấp độ, mode và lịch học trùng lặp vào {(DayOfWeek)newSchedule.DayOfWeek} " +
+                                $"từ {newSchedule.StartTime:hh\\:mm} đến {newSchedule.EndTime:hh\\:mm}. " +
+                                "Vui lòng kiểm tra lại hoặc hủy lớp học trùng lặp trước khi tạo lớp mới.");
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using BusinessLayer.DTOs.Schedule.ScheduleEntry;
 using BusinessLayer.Service.Interface;
+using BusinessLayer.DTOs.Profile;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
 using DataLayer.Enum;
