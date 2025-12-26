@@ -18,5 +18,10 @@ namespace DataLayer.Repositories.Abstraction.Schedule
         Task<List<ClassAssign>> GetByStudentIdAsync(string studentProfileId, bool includeClass = false);
         Task<ClassAssign?> GetByClassAndStudentAsync(string classId, string studentProfileId, bool includeClass = false);
         Task<List<ClassAssign>> GetByClassIdAsync(string classId, bool includeStudent = false);
+        
+        /// <summary>
+        /// Lấy danh sách StudentProfileId của các học sinh đã được approved trong lớp
+        /// </summary>
+        Task<List<string>> GetStudentIdsInClassAsync(string classId);
     }
 }

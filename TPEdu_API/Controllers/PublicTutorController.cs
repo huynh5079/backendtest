@@ -1,4 +1,4 @@
-﻿using BusinessLayer.DTOs.API;
+using BusinessLayer.DTOs.API;
 using BusinessLayer.DTOs.Admin.Tutors;
 using BusinessLayer.Service.Interface;
 using DataLayer.Enum;
@@ -82,7 +82,10 @@ namespace TPEdu_API.Controllers
                     teachingSubjects = x.TeachingSubjects,
                     teachingLevel = x.TeachingLevel,
                     createDate = x.CreateDate,
-                    avatarUrl = x.AvatarUrl
+                    avatarUrl = x.AvatarUrl,
+                    rating = x.Rating,
+                    feedbackCount = x.FeedbackCount,
+                    address = x.Address
                 });
 
                 return Ok(ApiResponse<object>.Ok(new { items = data, page = rs.PageNumber, size = rs.PageSize, total = rs.TotalCount }, "lấy danh sách thành công"));
@@ -102,7 +105,10 @@ namespace TPEdu_API.Controllers
                     teachingSubjects = x.TeachingSubjects,
                     teachingLevel = x.TeachingLevel,
                     createDate = x.CreateDate,
-                    avatarUrl = x.AvatarUrl
+                    avatarUrl = x.AvatarUrl,
+                    rating = x.Rating,
+                    feedbackCount = x.FeedbackCount,
+                    address = x.Address
                 });
 
                 return Ok(ApiResponse<object>.Ok(new { items = data, page = rs.PageNumber, size = rs.PageSize, total = rs.TotalCount }, "lấy danh sách thành công"));
@@ -119,5 +125,37 @@ namespace TPEdu_API.Controllers
 
             return Ok(ApiResponse<object>.Ok(detail, "lấy danh sách thành công"));
         }
+
+        /// <summary>
+        /// Lấy top N tutors có rating cao nhất (dùng cho trang chủ)
+        /// GET tpedu/v1/tutor/top-rated?count=3
+        /// </summary>
+        [HttpGet("top-rated")]
+        public async Task<IActionResult> GetTopRatedTutors([FromQuery] int count = 3)
+        {
+            if (count < 1) count = 3;
+            if (count > 10) count = 10; // Giới hạn tối đa 10
+            
+            var tutors = await _svc.GetTopRatedTutorsAsync(count);
+            
+            if (!tutors.Any())
+                return NotFound(ApiResponse<object>.Fail("không tìm thấy tutor nào"));
+
+            var data = tutors.Select(x => new
+            {
+                tutorId = x.TutorId,
+                username = x.Username,
+                email = x.Email,
+                teachingSubjects = x.TeachingSubjects,
+                teachingLevel = x.TeachingLevel,
+                rating = x.Rating,
+                feedbackCount = x.FeedbackCount,
+                avatarUrl = x.AvatarUrl,
+                address = x.Address
+            });
+
+            return Ok(ApiResponse<object>.Ok(data, "lấy danh sách top tutors thành công"));
+        }
     }
 }
+

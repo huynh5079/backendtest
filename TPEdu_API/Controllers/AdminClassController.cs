@@ -1,4 +1,6 @@
+using BusinessLayer.DTOs.API;
 using BusinessLayer.DTOs.Schedule.Class;
+using BusinessLayer.DTOs.Schedule.ClassAssign;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Enum;
 using Microsoft.AspNetCore.Authorization;
@@ -13,17 +15,100 @@ namespace TPEdu_API.Controllers
     public class AdminClassController : ControllerBase
     {
         private readonly IClassService _classService;
+        private readonly IAssignService _assignService;
 
-        public AdminClassController(IClassService classService)
+        public AdminClassController(IClassService classService, IAssignService assignService)
         {
             _classService = classService;
+            _assignService = assignService;
+        }
+
+        /// <summary>
+        /// Admin lấy danh sách tất cả lớp học
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetAllClasses([FromQuery] ClassStatus? status = null)
+        {
+            try
+            {
+                var classes = await _classService.GetAllClassesForAdminAsync(status);
+                var classesList = classes.ToList();
+                // Log để debug
+                Console.WriteLine($"[AdminClassController] GetAllClasses - Status filter: {status}, Count: {classesList.Count}");
+                return Ok(ApiResponse<IEnumerable<ClassDto>>.Ok(classesList, "Lấy danh sách lớp học thành công."));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AdminClassController] GetAllClasses - Error: {ex.Message}");
+                Console.WriteLine($"[AdminClassController] GetAllClasses - StackTrace: {ex.StackTrace}");
+                return StatusCode(500, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
+
+        /// <summary>
+        /// Admin đồng bộ lại CurrentStudentCount cho một lớp
+        /// Dùng để sửa các lớp đã bị lệch CurrentStudentCount
+        /// </summary>
+        [HttpPost("{classId}/sync-student-count")]
+        public async Task<IActionResult> SyncStudentCount(string classId)
+        {
+            try
+            {
+                var result = await _classService.SyncCurrentStudentCountAsync(classId);
+                return Ok(ApiResponse<bool>.Ok(result, "Đồng bộ số học sinh thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
+
+        /// <summary>
+        /// Admin lấy chi tiết lớp học
+        /// </summary>
+        [HttpGet("{classId}/detail")]
+        public async Task<IActionResult> GetClassDetail(string classId)
+        {
+            try
+            {
+                var classDetail = await _classService.GetClassByIdAsync(classId);
+                if (classDetail == null)
+                    return NotFound(ApiResponse<object>.Fail("Không tìm thấy lớp học."));
+                
+                return Ok(ApiResponse<ClassDto>.Ok(classDetail, "Lấy chi tiết lớp học thành công"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
+
+        /// <summary>
+        /// Admin lấy danh sách học viên của lớp học
+        /// </summary>
+        [HttpGet("{classId}/students")]
+        public async Task<IActionResult> GetStudentsInClass(string classId)
+        {
+            try
+            {
+                var students = await _assignService.GetStudentsInClassForAdminAsync(classId);
+                return Ok(ApiResponse<List<StudentEnrollmentDto>>.Ok(students, "Lấy danh sách học viên thành công."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
         }
 
         /// <summary>
         /// Admin hủy lớp học (toàn bộ lớp)
         /// </summary>
         [HttpPost("{classId}/cancel")]
-        public async Task<IActionResult> CancelClass(string classId, [FromBody] CancelClassRequestDto request)
+        public async Task<IActionResult> CancelClass(string classId, [FromBody] CancelClassRequestBodyDto requestBody)
         {
             try
             {
@@ -31,8 +116,14 @@ namespace TPEdu_API.Controllers
                 if (string.IsNullOrEmpty(adminUserId))
                     return Unauthorized(new { message = "Token không hợp lệ." });
 
-                // Đảm bảo ClassId trong request khớp với route
-                request.ClassId = classId;
+                // Map từ body DTO sang service DTO với ClassId từ route
+                var request = new CancelClassRequestDto
+                {
+                    ClassId = classId,
+                    Reason = requestBody.Reason,
+                    Note = requestBody.Note,
+                    StudentId = requestBody.StudentId
+                };
 
                 var result = await _classService.CancelClassByAdminAsync(adminUserId, request);
                 

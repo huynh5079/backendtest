@@ -50,28 +50,30 @@ namespace DataLayer.Repositories
         }
 
         // Tính rating: trung bình theo từng người học (avg per rater) -> rồi trung bình các raters
-        // Chỉ tính với feedback CÓ ClassId (tức feedback class), Rating != null và Class COMPLETED
+        // Đếm TẤT CẢ feedbacks có Rating (không kể class status)
         public async Task<(double avg, int count)> CalcTutorRatingAsync(string tutorUserId)
         {
-            var q =
-                from f in _context.Feedbacks
-                join c in _context.Classes on f.ClassId equals c.Id
-                where f.ToUserId == tutorUserId
-                      && f.ClassId != null
-                      && f.Rating != null
-                      && (c.Status == ClassStatus.Ongoing || c.Status == ClassStatus.Completed)
-                group f by f.FromUserId into g
-                select new
+            // Lấy tất cả feedbacks có rating (bỏ điều kiện class status để đếm chính xác)
+            var allFeedbacks = await _context.Feedbacks
+                .Where(f => f.ToUserId == tutorUserId && f.Rating != null)
+                .ToListAsync();
+
+            if (allFeedbacks.Count == 0) return (0, 0);
+
+            // Group by user để tính avg per rater
+            var perUser = allFeedbacks
+                .GroupBy(f => f.FromUserId)
+                .Select(g => new
                 {
                     FromUserId = g.Key!,
                     UserAvg = g.Average(x => (double)x.Rating!)
-                };
-
-            var perUser = await q.ToListAsync();
-            if (perUser.Count == 0) return (0, 0);
+                })
+                .ToList();
 
             var overall = perUser.Average(x => x.UserAvg);
-            return (overall, perUser.Count);
+            
+            // Return (rating average, TOTAL feedback count)
+            return (overall, allFeedbacks.Count);
         }
     }
 }

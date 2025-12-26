@@ -23,5 +23,8 @@ namespace DataLayer.Repositories
 
         public async Task<IReadOnlyList<Media>> GetCertificatesByTutorProfileAsync(string tutorProfileId)
             => await _dbSet.Where(m => m.Context == UploadContext.Certificate && m.TutorProfileId == tutorProfileId).ToListAsync();
+
+        public async Task<int> CountByOwnerAndContextAsync(string ownerUserId, UploadContext context)
+            => await _dbSet.CountAsync(m => m.OwnerUserId == ownerUserId && m.Context == context);
     }
 }

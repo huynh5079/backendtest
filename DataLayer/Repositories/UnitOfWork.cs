@@ -42,6 +42,14 @@ namespace DataLayer.Repositories
         public IConversationRepository Conversations { get; }
         public ITutorDepositEscrowRepository TutorDepositEscrows { get; }
         public ISystemSettingsRepository SystemSettings { get; }
+        
+        // Quiz Feature Repositories
+        public IQuizRepository Quizzes { get; }
+        public IQuizQuestionRepository QuizQuestions { get; }
+        public IStudentQuizAttemptRepository StudentQuizAttempts { get; }
+        public IStudentQuizAnswerRepository StudentQuizAnswers { get; }
+        public IClassRepository2 Classes2 { get; }
+        public IVideoAnalysisRepository VideoAnalyses { get; }
 
         public UnitOfWork(TpeduContext ctx,
                           IUserRepository users,
@@ -69,7 +77,13 @@ namespace DataLayer.Repositories
                           IFavoriteTutorRepository favoriteTutors,
                           IConversationRepository conversations,
                           ITutorDepositEscrowRepository tutorDepositEscrows,
-                          ISystemSettingsRepository systemSettings)
+                          ISystemSettingsRepository systemSettings,
+                          IQuizRepository quizzes,
+                          IQuizQuestionRepository quizQuestions,
+                          IStudentQuizAttemptRepository studentQuizAttempts,
+                          IStudentQuizAnswerRepository studentQuizAnswers,
+                          IClassRepository2 classes2,
+                          IVideoAnalysisRepository videoAnalyses)
         {
             _ctx = ctx;
             Users = users;
@@ -98,6 +112,12 @@ namespace DataLayer.Repositories
             Conversations = conversations;
             TutorDepositEscrows = tutorDepositEscrows;
             SystemSettings = systemSettings;
+            Quizzes = quizzes;
+            QuizQuestions = quizQuestions;
+            StudentQuizAttempts = studentQuizAttempts;
+            StudentQuizAnswers = studentQuizAnswers;
+            Classes2 = classes2;
+            VideoAnalyses = videoAnalyses;
         }
 
         public Task<int> SaveChangesAsync() => _ctx.SaveChangesAsync();

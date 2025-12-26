@@ -9,6 +9,7 @@ namespace BusinessLayer.DTOs.Wallet
         // GrossAmount sẽ lấy từ Class.Price trong database
         // CommissionRate sẽ tự động tính từ Commission rules
         public string? PayerStudentUserId { get; set; } // nếu parent trả thay
+        public string? ClassAssignId { get; set; } // Optional: Nếu có thì dùng trực tiếp để tránh query lại và tracking conflict
     }
 
     public class ReleaseEscrowRequest

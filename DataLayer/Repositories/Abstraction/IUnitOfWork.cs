@@ -38,6 +38,14 @@ namespace DataLayer.Repositories.Abstraction
         IConversationRepository Conversations { get; }
         ITutorDepositEscrowRepository TutorDepositEscrows { get; }
         ISystemSettingsRepository SystemSettings { get; }
+        
+        // Quiz Feature Repositories
+        IQuizRepository Quizzes { get; }
+        IQuizQuestionRepository QuizQuestions { get; }
+        IStudentQuizAttemptRepository StudentQuizAttempts { get; }
+        IStudentQuizAnswerRepository StudentQuizAnswers { get; }
+        IClassRepository2 Classes2 { get; }
+        IVideoAnalysisRepository VideoAnalyses { get; }
 
         Task<int> SaveChangesAsync();
         Task<IDbContextTransaction> BeginTransactionAsync();

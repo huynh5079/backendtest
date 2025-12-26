@@ -97,7 +97,7 @@ namespace DataLayer.Repositories
             // Filter by mode (online/offline) - check through Classes
             if (mode.HasValue)
             {
-                q = q.Where(t => t.Classes.Any(c => c.Mode == mode.Value && c.Status == ClassStatus.Active));
+                q = q.Where(t => t.Classes.Any(c => c.Mode == mode.Value && c.Status == ClassStatus.Pending));
             }
 
             // Filter by area (from User.Address)
@@ -123,7 +123,7 @@ namespace DataLayer.Repositories
             if (minPrice.HasValue || maxPrice.HasValue)
             {
                 q = q.Where(t => t.Classes.Any(c =>
-                    c.Status == ClassStatus.Active &&
+                    c.Status == ClassStatus.Pending &&
                     (!minPrice.HasValue || c.Price >= minPrice.Value) &&
                     (!maxPrice.HasValue || c.Price <= maxPrice.Value)));
             }
@@ -162,5 +162,24 @@ namespace DataLayer.Repositories
                        .Where(t => t.UserId == userId)
                        .Select(t => t.Id)
                        .FirstOrDefaultAsync();
+
+        /// <summary>
+        /// Lấy tất cả approved & active tutors để service layer tính rating và sort
+        /// </summary>
+        public async Task<IReadOnlyList<TutorProfile>> GetTopRatedAsync(int count)
+        {
+            // Lấy nhiều hơn count để có đủ tutors sau khi filter những người có rating
+            // Service layer sẽ tính rating từ Feedback và sort
+            return await _dbSet
+                .Include(t => t.User)
+                .Where(t => t.ReviewStatus == ReviewStatus.Approved
+                            && t.User != null
+                            && t.User.Status == AccountStatus.Active
+                            && !t.User.IsBanned)
+                .OrderByDescending(t => t.User!.CreatedAt)
+                .Take(count * 10) // Lấy nhiều hơn để đảm bảo có đủ sau khi filter
+                .ToListAsync();
+        }
     }
 }
+

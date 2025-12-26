@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using TPEdu_API.Common.Extensions;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace TPEdu_API.Controllers
 {
@@ -199,6 +201,74 @@ namespace TPEdu_API.Controllers
             
             return Ok(ApiResponse<ConversationDto>.Ok(conversation, "Lấy conversation thành công"));
         }
+
+        /// <summary>
+        /// User xóa conversation của mình (remove khỏi conversation)
+        /// </summary>
+        [HttpDelete("conversations/{conversationId}")]
+        [Authorize]
+        public async Task<IActionResult> DeleteConversation(string conversationId)
+        {
+            var userId = User.RequireUserId();
+            var deleted = await _conversationService.RemoveUserFromConversationAsync(conversationId, userId);
+            
+            if (!deleted)
+                return NotFound(ApiResponse<object>.Fail("Không tìm thấy conversation hoặc bạn không có quyền xóa"));
+            
+            return Ok(ApiResponse<object>.Ok(new { deleted }, "Xóa cuộc trò chuyện thành công"));
+        }
+
+        /// <summary>
+        /// Lấy danh sách users online
+        /// </summary>
+        [HttpGet("online-users")]
+        public IActionResult GetOnlineUsers()
+        {
+            var userId = User.RequireUserId();
+            var chatHubService = HttpContext.RequestServices.GetRequiredService<IChatHubService>();
+            var onlineUsers = chatHubService.GetOnlineUsers();
+            
+            return Ok(ApiResponse<object>.Ok(new { userIds = onlineUsers }, "Lấy danh sách users online thành công"));
+        }
+
+        /// <summary>
+        /// Kiểm tra user có online không
+        /// </summary>
+        [HttpGet("users/{targetUserId}/online-status")]
+        public async Task<IActionResult> GetUserOnlineStatus(string targetUserId)
+        {
+            var userId = User.RequireUserId();
+            var chatHubService = HttpContext.RequestServices.GetRequiredService<IChatHubService>();
+            var isOnline = chatHubService.IsUserOnline(targetUserId);
+            
+            return Ok(ApiResponse<object>.Ok(new { userId = targetUserId, isOnline }, "Lấy trạng thái online thành công"));
+        }
+
+        /// <summary>
+        /// Lấy danh sách users online từ một list userIds
+        /// </summary>
+        [HttpPost("online-users/check")]
+        public IActionResult CheckUsersOnlineStatus([FromBody] CheckUsersOnlineRequest request)
+        {
+            var userId = User.RequireUserId();
+            var chatHubService = HttpContext.RequestServices.GetRequiredService<IChatHubService>();
+            var onlineStatusDict = chatHubService.GetOnlineUsersFromList(request.UserIds ?? new List<string>());
+            
+            // Convert List<string> to Dictionary<string, bool>
+            var result = new Dictionary<string, bool>();
+            var onlineUserIds = onlineStatusDict.ToHashSet();
+            foreach (var targetUserId in request.UserIds ?? new List<string>())
+            {
+                result[targetUserId] = onlineUserIds.Contains(targetUserId);
+            }
+            
+            return Ok(ApiResponse<object>.Ok(result, "Kiểm tra trạng thái online thành công"));
+        }
+    }
+
+    public class CheckUsersOnlineRequest
+    {
+        public List<string>? UserIds { get; set; }
     }
 
     public class MarkMessagesReadRequest

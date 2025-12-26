@@ -67,6 +67,18 @@ namespace BusinessLayer.Service
             // Push realtime qua ChatHub
             await _hubService.SendMessageToUserAsync(receiverId, messageDto);
 
+            // Tăng UnreadCount cho receiver trong hội thoại 1-1
+            var conversation = await _uow.Conversations.GetOneToOneConversationAsync(senderId, receiverId);
+            if (conversation != null && conversation.Participants != null)
+            {
+                var participant = conversation.Participants.FirstOrDefault(p => p.UserId == receiverId);
+                if (participant != null)
+                {
+                    participant.UnreadCount += 1;
+                    await _uow.SaveChangesAsync();
+                }
+            }
+
             return messageDto;
         }
 
@@ -114,6 +126,18 @@ namespace BusinessLayer.Service
         public async Task MarkConversationAsReadAsync(string userId, string otherUserId)
         {
             await _uow.Messages.MarkConversationAsReadAsync(userId, otherUserId);
+
+            // Đồng bộ UnreadCount trong ConversationParticipant cho hội thoại 1-1
+            var conversation = await _uow.Conversations.GetOneToOneConversationAsync(userId, otherUserId);
+            if (conversation != null && conversation.Participants != null)
+            {
+                var participant = conversation.Participants.FirstOrDefault(p => p.UserId == userId);
+                if (participant != null)
+                {
+                    participant.UnreadCount = 0;
+                    await _uow.SaveChangesAsync();
+                }
+            }
         }
 
         public async Task<int> GetUnreadCountAsync(string userId)
@@ -176,14 +200,35 @@ namespace BusinessLayer.Service
             await _uow.Messages.CreateAsync(message);
             await _uow.SaveChangesAsync();
 
-            // Cập nhật LastMessageAt
+            // Cập nhật LastMessageAt và tăng UnreadCount cho người nhận
             if (!string.IsNullOrEmpty(conversationId))
             {
-                var conversation = await _uow.Conversations.GetByIdAsync(conversationId);
+                var conversation = await _uow.Conversations.GetByIdWithParticipantsAsync(conversationId);
                 if (conversation != null)
                 {
                     conversation.LastMessageAt = DateTime.Now;
                     await _uow.Conversations.UpdateAsync(conversation);
+                    
+                    // Tăng UnreadCount cho tất cả participants (trừ người gửi)
+                    foreach (var participant in conversation.Participants.Where(p => p.UserId != senderId))
+                    {
+                        participant.UnreadCount += 1;
+                    }
+                    
+                    await _uow.SaveChangesAsync();
+                }
+            }
+            else if (!string.IsNullOrEmpty(dto.ReceiverId))
+            {
+                // Chat 1-1 cũ - tìm conversation qua participants
+                // Note: Logic này có thể cần được cải thiện nếu có nhiều conversation 1-1
+                var oldConversation = await _uow.Conversations.GetOneToOneConversationAsync(senderId, dto.ReceiverId);
+                if (oldConversation != null && oldConversation.Participants != null)
+                {
+                    foreach (var participant in oldConversation.Participants.Where(p => p.UserId != senderId))
+                    {
+                        participant.UnreadCount += 1;
+                    }
                     await _uow.SaveChangesAsync();
                 }
             }

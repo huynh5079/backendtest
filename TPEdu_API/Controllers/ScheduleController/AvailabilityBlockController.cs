@@ -1,14 +1,13 @@
 ﻿using BusinessLayer.DTOs.Schedule.AvailabilityBlock;
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface.IScheduleService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using BusinessLayer.Service.Interface; // Nơi chứa IAvailabilityBlockService
 using System.Threading.Tasks;
 using System;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http; // StatusCodes
-using TPEdu_API.Common.Extensions; // .RequireUserId()
 using DataLayer.Repositories.GenericType.Abstraction;
 using DataLayer.Entities;
 using BusinessLayer.Service;
@@ -69,7 +68,7 @@ namespace TPEdu_API.Controllers.ScheduleController
 
                 // Trả về 201 Created
                 var firstBlockId = createdBlocks.FirstOrDefault()?.Id ?? string.Empty;
-                return CreatedAtAction(nameof(GetMyAvailabilityBlocks), new { startDate = DateTime.UtcNow.Date, endDate = DateTime.UtcNow.Date }, createdBlocks);
+                return CreatedAtAction(nameof(GetMyAvailabilityBlocks), new { startDate = DateTimeHelper.VietnamNow.Date, endDate = DateTimeHelper.VietnamNow.Date }, createdBlocks);
             }
             catch (UnauthorizedAccessException ex) // Lỗi 401 từ RequireUserId()
             {

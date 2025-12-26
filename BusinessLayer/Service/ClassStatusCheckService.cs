@@ -1,124 +1,225 @@
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface;
+using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
 using DataLayer.Enum;
 using DataLayer.Repositories.Abstraction;
+using DataLayer.Repositories.Abstraction.Schedule;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace BusinessLayer.Service
 {
-    /// <summary>
-    /// Service để kiểm tra và cập nhật trạng thái lớp học tự động
-    /// </summary>
     public class ClassStatusCheckService : IClassStatusCheckService
     {
-        private readonly IUnitOfWork _uow;
+        private readonly IScheduleUnitOfWork _uow;
         private readonly ILogger<ClassStatusCheckService> _logger;
+        private readonly IScheduleGenerationService _scheduleGenerationService;
+        private readonly TpeduContext _context;
+
+        private const int PENDING_CLASS_TIMEOUT_HOURS = 24;
 
         public ClassStatusCheckService(
-            IUnitOfWork uow,
-            ILogger<ClassStatusCheckService> logger)
+            IScheduleUnitOfWork uow,
+            ILogger<ClassStatusCheckService> logger,
+            IScheduleGenerationService scheduleGenerationService,
+            TpeduContext context)
         {
             _uow = uow;
             _logger = logger;
+            _scheduleGenerationService = scheduleGenerationService;
+            _context = context;
         }
 
-        /// <summary>
-        /// Kiểm tra các lớp có StartDate <= now và đủ điều kiện để chuyển sang Ongoing
-        /// </summary>
         public async Task<int> CheckAndUpdateClassStatusAsync(CancellationToken ct = default)
         {
+            int totalUpdated = 0;
             try
             {
-                var now = DateTime.UtcNow;
-                
-                // Lấy tất cả các lớp có:
-                // 1. ClassStartDate <= now (hoặc null)
-                // 2. Status = Pending hoặc Active (chưa Ongoing)
-                var classesToCheck = await _uow.Classes.GetAllAsync(
-                    filter: c => c.DeletedAt == null &&
-                                 (c.Status == ClassStatus.Pending || c.Status == ClassStatus.Active) &&
-                                 (c.ClassStartDate == null || c.ClassStartDate <= now));
+                // Activate due classes
+                totalUpdated += await ActivateDueClassesAsync(ct);
 
-                if (!classesToCheck.Any())
-                {
-                    _logger.LogInformation("Không có lớp nào cần kiểm tra trạng thái");
-                    return 0;
-                }
+                // Cancel unpaid pending classes
+                totalUpdated += await CleanupUnpaidClassesAsync(ct);
 
-                int updatedCount = 0;
-
-                foreach (var classEntity in classesToCheck)
-                {
-                    try
-                    {
-                        // Sử dụng reflection để gọi private method CanClassStartAsync
-                        // Hoặc tạo public method trong EscrowService
-                        var canStart = await CanClassStartAsync(classEntity, ct);
-                        
-                        if (canStart && classEntity.Status != ClassStatus.Ongoing)
-                        {
-                            classEntity.Status = ClassStatus.Ongoing;
-                            await _uow.Classes.UpdateAsync(classEntity);
-                            updatedCount++;
-                            
-                            _logger.LogInformation(
-                                "Đã chuyển lớp {ClassId} ({Title}) sang trạng thái Ongoing",
-                                classEntity.Id, classEntity.Title);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex,
-                            "Lỗi khi kiểm tra lớp {ClassId}: {Message}",
-                            classEntity.Id, ex.Message);
-                    }
-                }
-
-                if (updatedCount > 0)
+                if (totalUpdated > 0)
                 {
                     await _uow.SaveChangesAsync();
-                    _logger.LogInformation("Đã cập nhật {Count} lớp sang trạng thái Ongoing", updatedCount);
                 }
 
-                return updatedCount;
+                return totalUpdated;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lỗi khi chạy background job kiểm tra trạng thái lớp học");
+                _logger.LogError(ex, "Lỗi xảy ra trong quá trình quét trạng thái lớp học.");
                 throw;
             }
         }
 
-        /// <summary>
-        /// Kiểm tra xem lớp có đủ điều kiện để chuyển sang trạng thái "Ongoing" không
-        /// Điều kiện:
-        /// 1. Đến ngày bắt đầu học (ClassStartDate <= DateTime.Now hoặc null)
-        /// 2. Có đủ số học sinh đã đóng tiền (ít nhất 1 học sinh có PaymentStatus = Paid)
-        /// 3. Gia sư đã đặt cọc (có TutorDepositEscrow với Status = Held)
-        /// </summary>
-        private async Task<bool> CanClassStartAsync(Class classEntity, CancellationToken ct = default)
+        private async Task<int> ActivateDueClassesAsync(CancellationToken ct)
         {
-            // 1. Kiểm tra ngày bắt đầu học (đã được filter ở trên)
-            // Không cần check lại vì đã filter trong query
+            var now = DateTimeHelper.VietnamNow;
 
-            // 2. Kiểm tra có học sinh đã đóng tiền chưa
-            var paidStudents = await _uow.ClassAssigns.GetAllAsync(
-                filter: ca => ca.ClassId == classEntity.Id && ca.PaymentStatus == PaymentStatus.Paid);
-            
-            if (!paidStudents.Any())
+            // _uow.Classes giờ sẽ hoạt động vì IScheduleUnitOfWork có chứa Classes
+            var dueClasses = await _uow.Classes.GetAllAsync(
+                filter: c => c.DeletedAt == null &&
+                             c.Status == ClassStatus.Pending &&
+                             c.ClassStartDate != null &&
+                             c.ClassStartDate <= now
+            );
+
+            int count = 0;
+            foreach (var cls in dueClasses)
             {
-                return false; // Chưa có học sinh nào đóng tiền
+                if (cls.CurrentStudentCount > 0)
+                {
+                    cls.Status = ClassStatus.Ongoing;
+                    await _uow.Classes.UpdateAsync(cls);
+                    _logger.LogInformation($"[AUTO-ACTIVATE] Lớp {cls.Id} ({cls.Title}) đã được chuyển sang Ongoing vì đến ngày khai giảng.");
+                    
+                    // Sinh lịch học nếu chưa có
+                    try
+                    {
+                        await GenerateLessonsIfNeededAsync(cls, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"[AUTO-ACTIVATE] Lỗi khi sinh lịch cho lớp {cls.Id}: {ex.Message}");
+                        // Không throw để không rollback việc cập nhật status
+                    }
+                    
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private async Task<int> CleanupUnpaidClassesAsync(CancellationToken ct)
+        {
+            var now = DateTimeHelper.VietnamNow;
+            var timeoutThreshold = now.AddHours(-PENDING_CLASS_TIMEOUT_HOURS);
+
+            // Find all pending classes created before the timeout threshold
+            var expiredClasses = await _uow.Classes.GetAllAsync(
+                filter: c => c.DeletedAt == null &&
+                             c.Status == ClassStatus.Pending &&
+                             c.CreatedAt < timeoutThreshold
+            );
+
+            int count = 0;
+            foreach (var cls in expiredClasses)
+            {
+                bool shouldCancel = false;
+                string? originalRequestId = null;
+
+                // Check if the class is linked to a ClassRequest
+                //var match = Regex.Match(cls.Title ?? "", @"\(từ yêu cầu ([a-f0-9\-]+)\)");
+                var match = Regex.Match(cls.Description ?? "", @"\[RefReqId:([a-f0-9\-]+)\]");
+
+                if (match.Success)
+                {
+                    // If linked to a ClassRequest, always cancel
+                    shouldCancel = true;
+                    originalRequestId = match.Groups[1].Value;
+                }
+                else
+                {
+                    // KHÔNG tự động hủy lớp chỉ vì CurrentStudentCount == 0
+                    // Lớp vẫn ở trạng thái Pending để học sinh có thể đăng ký
+                    // Chỉ tutor hoặc admin mới có thể hủy lớp
+                    // Không set shouldCancel = true
+                }
+
+                if (shouldCancel)
+                {
+                    // Cancel Class 
+                    cls.Status = ClassStatus.Cancelled;
+                    await _uow.Classes.UpdateAsync(cls);
+                    count++;
+
+                    // Restore original ClassRequest if applicable
+                    if (!string.IsNullOrEmpty(originalRequestId))
+                    {
+                        var originalRequest = await _uow.ClassRequests.GetAsync(r => r.Id == originalRequestId);
+
+                        if (originalRequest != null && originalRequest.Status == ClassRequestStatus.Matched)
+                        {
+                            // Restore ClassRequest to Pending
+                            originalRequest.Status = ClassRequestStatus.Pending;
+                            await _uow.ClassRequests.UpdateAsync(originalRequest);
+
+                            // Cancel any accepted TutorApplication for this request
+                            var acceptedApp = await _uow.TutorApplications.GetAsync(
+                                ta => ta.ClassRequestId == originalRequestId &&
+                                      ta.TutorId == cls.TutorId &&
+                                      ta.Status == ApplicationStatus.Accepted);
+
+                            if (acceptedApp != null)
+                            {
+                                acceptedApp.Status = ApplicationStatus.Cancelled;
+                                await _uow.TutorApplications.UpdateAsync(acceptedApp);
+                            }
+
+                            _logger.LogInformation($"[AUTO-REOPEN] Đã hủy lớp {cls.Id} và mở lại Request {originalRequestId}.");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"[AUTO-CANCEL] Đã hủy lớp rác {cls.Id}.");
+                    }
+                }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Sinh lesson và schedule cho class nếu:
+        /// - Class đang ở trạng thái Ongoing
+        /// - Chưa có lesson nào trong DB
+        /// </summary>
+        private async Task GenerateLessonsIfNeededAsync(Class classEntity, CancellationToken ct)
+        {
+            if (classEntity.Status != ClassStatus.Ongoing)
+            {
+                return;
             }
 
-            // 3. Kiểm tra gia sư đã đặt cọc chưa
-            var deposit = await _uow.TutorDepositEscrows.GetByClassIdAsync(classEntity.Id, ct);
-            if (deposit == null || deposit.Status != TutorDepositStatus.Held)
+            // Only generate if no lessons exist yet
+            var hasLessons = await _context.Lessons.AnyAsync(l => l.ClassId == classEntity.Id, ct);
+            if (hasLessons)
             {
-                return false; // Gia sư chưa đặt cọc
+                return;
             }
 
-            return true; // Đủ tất cả điều kiện
+            // Load ClassSchedules nếu chưa có
+            if (classEntity.ClassSchedules == null || !classEntity.ClassSchedules.Any())
+            {
+                var schedules = await _context.ClassSchedules
+                    .Where(cs => cs.ClassId == classEntity.Id)
+                    .ToListAsync(ct);
+                classEntity.ClassSchedules = schedules;
+            }
+
+            if (classEntity.ClassSchedules != null && classEntity.ClassSchedules.Any())
+            {
+                // Gọi service sinh lịch
+                await _scheduleGenerationService.GenerateScheduleFromClassAsync(
+                    classEntity.Id,
+                    classEntity.TutorId,
+                    classEntity.ClassStartDate ?? DateTimeHelper.VietnamNow,
+                    classEntity.ClassSchedules
+                );
+                _logger.LogInformation($"[AUTO-ACTIVATE] Đã sinh lịch học cho lớp {classEntity.Id}.");
+            }
+            else
+            {
+                _logger.LogWarning($"[AUTO-ACTIVATE] Lớp {classEntity.Id} không có ClassSchedules để sinh lịch.");
+            }
         }
     }
 }
-

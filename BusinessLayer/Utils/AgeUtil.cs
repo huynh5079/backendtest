@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BusinessLayer.Helper;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -21,7 +22,7 @@ namespace BusinessLayer.Utils
             if (!dob.HasValue) return;
 
             var date = dob.Value;
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = DateTimeHelper.VietnamToday;
 
             if (date > today)
                 throw new ArgumentException("ngày sinh không được ở tương lai");
@@ -39,7 +40,7 @@ namespace BusinessLayer.Utils
             if (!dob.HasValue) return null;
 
             var birth = dob.Value;
-            var now = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var now = today ?? DateTimeHelper.VietnamToday;
 
             var age = now.Year - birth.Year;
             // Nếu chưa đến sinh nhật năm nay thì trừ 1

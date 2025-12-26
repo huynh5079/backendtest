@@ -11,5 +11,9 @@ namespace DataLayer.Repositories.Abstraction.Schedule
     public interface ILessonRepository : IGenericRepository<Lesson>
     {
         Task<(Lesson lesson, Class @class)> GetWithClassAsync(string lessonId);
+
+        // New: For attendance views
+        Task<IEnumerable<Lesson>> GetByClassWithScheduleEntriesAsync(string classId);
+        Task<Lesson?> GetByIdWithClassAndScheduleAsync(string lessonId);
     }
 }

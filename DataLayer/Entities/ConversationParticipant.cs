@@ -11,7 +11,7 @@ public partial class ConversationParticipant : BaseEntity
     public string Role { get; set; } = "Member";
     
     // Thời gian tham gia
-    public DateTime JoinedAt { get; set; } = DateTime.Now;
+    public DateTime JoinedAt { get; set; }
     
     // Số tin nhắn chưa đọc trong conversation này
     public int UnreadCount { get; set; } = 0;

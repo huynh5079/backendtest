@@ -1,4 +1,5 @@
 ﻿using DataLayer.Enum;
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,8 +15,5 @@ namespace BusinessLayer.DTOs.Profile
         public string? Gender { get; set; }
         public string? Address { get; set; }
         public DateOnly? DateOfBirth { get; set; }
-
-        // Parent fields
-        public string? Relationship { get; set; }
     }
 }

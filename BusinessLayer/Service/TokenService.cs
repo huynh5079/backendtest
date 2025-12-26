@@ -58,4 +58,63 @@ public class TokenService : ITokenService
 
         return new JwtSecurityTokenHandler().WriteToken(jwt);
     }
+
+    public string GenerateStudentResponseToken(string reportId, string studentUserId)
+    {
+        var claims = new List<Claim>
+        {
+            new("reportId", reportId),
+            new("studentUserId", studentUserId),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_opt.Key));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var jwt = new JwtSecurityToken(
+            issuer: _opt.Issuer,
+            audience: _opt.Audience,
+            claims: claims,
+            notBefore: DateTime.Now,
+            expires: DateTime.Now.AddDays(7), // Token valid for 7 days
+            signingCredentials: creds
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(jwt);
+    }
+
+    public (string reportId, string studentUserId)? ValidateStudentResponseToken(string token)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.UTF8.GetBytes(_opt.Key);
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = _opt.Issuer,
+                ValidateAudience = true,
+                ValidAudience = _opt.Audience,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero
+            };
+
+            var principal = tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
+
+            var reportId = principal.FindFirst("reportId")?.Value;
+            var studentUserId = principal.FindFirst("studentUserId")?.Value;
+
+            if (string.IsNullOrEmpty(reportId) || string.IsNullOrEmpty(studentUserId))
+                return null;
+
+            return (reportId, studentUserId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

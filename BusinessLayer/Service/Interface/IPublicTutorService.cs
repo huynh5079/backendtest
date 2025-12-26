@@ -13,5 +13,11 @@ namespace BusinessLayer.Service.Interface
         Task<PaginationResult<PublicTutorListItemDto>> GetApprovedTutorsPagedAsync(int page, int pageSize = 6);
         Task<PaginationResult<PublicTutorListItemDto>> SearchAndFilterTutorsAsync(TutorSearchFilterDto filter);
         Task<PublicTutorDetailDto?> GetApprovedTutorDetailAsync(string userId);
+        
+        /// <summary>
+        /// Lấy top N tutors có rating cao nhất (dùng cho trang chủ)
+        /// </summary>
+        Task<IReadOnlyList<PublicTutorListItemDto>> GetTopRatedTutorsAsync(int count = 3);
     }
 }
+

@@ -3,11 +3,13 @@ using BusinessLayer.DTOs.Schedule.Class;
 using BusinessLayer.DTOs.Schedule.ClassAssign;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
+using Humanizer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using TPEdu_API.Common.Extensions;
 
@@ -34,11 +36,33 @@ namespace TPEdu_API.Controllers.ScheduleController
         public async Task<IActionResult> AssignStudentToClass([FromBody] AssignRecurringClassDto assignDto)
         {
             // Take userId from JWT token
-            var userId = User.RequireUserId();
-            var updatedClass = await _assignService.AssignRecurringClassAsync(userId, assignDto.ClassId);
+            var userId = User.RequireUserId(); 
+            var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
 
-            // Return response
-            return Ok(ApiResponse<ClassDto>.Ok(updatedClass));
+            var result = await _assignService.AssignRecurringClassAsync(userId, role, assignDto);
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// [FLOW 1] Xác nhận thanh toán cho lớp chờ (Class Request -> Pending Class).
+        /// </summary>
+        [HttpPost("confirm-payment/{classId}")]
+        [Authorize(Roles = "Student,Parent")]
+        public async Task<IActionResult> ConfirmClassPayment(string classId)
+        {
+            var userId = User.RequireUserId();
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            var result = await _assignService.ConfirmClassPaymentAsync(userId, userRole, classId);
+
+            if (result)
+            {
+                return Ok(new { message = "Thanh toán thành công. Lớp học đã được kích hoạt." });
+            }
+
+            return BadRequest(new { message = "Thanh toán thất bại." });
         }
 
         /// <summary>
@@ -46,13 +70,14 @@ namespace TPEdu_API.Controllers.ScheduleController
         /// </summary>
         [HttpDelete("{classId}")]
         [Authorize(Roles = "Student,Parent")] // Only allow Students and Parents
-        public async Task<IActionResult> WithdrawFromClass(string classId)
+        public async Task<IActionResult> WithdrawFromClass(string classId, [FromQuery] string? studentId)
         {
             var userId = User.RequireUserId();
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
 
-            await _assignService.WithdrawFromClassAsync(userId, classId);
+            await _assignService.WithdrawFromClassAsync(userId, userRole, classId, studentId);
 
-            return Ok(ApiResponse<object>.Ok(null, "Rút khỏi lớp thành công."));
+            return Ok(new { message = "Đã rút khỏi lớp học thành công." });
         }
 
         /// <summary>
@@ -60,29 +85,50 @@ namespace TPEdu_API.Controllers.ScheduleController
         /// </summary>
         [HttpGet("my-classes")]
         [Authorize(Roles = "Student,Parent")] // Only allow Students and Parents
-        public async Task<IActionResult> GetMyEnrolledClasses()
+        public async Task<IActionResult> GetMyEnrolledClasses([FromQuery] string? childId)
         {
-            var userId = User.RequireUserId();
-            var enrolledClasses = await _assignService.GetMyEnrolledClassesAsync(userId);
+            try
+            {
+                var userId = User.RequireUserId();
+                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
 
-            return Ok(ApiResponse<List<MyEnrolledClassesDto>>.Ok(enrolledClasses, "Lấy danh sách lớp đã ghi danh thành công."));
+                var result = await _assignService.GetMyEnrolledClassesAsync(userId, role, childId);
+                return Ok(ApiResponse<List<MyEnrolledClassesDto>>.Ok(result));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>
         /// [Student] Check if student has enrolled in a specific class.
         /// </summary>
-        [HttpGet("{classId}/check")]
+        [HttpGet("check-enrollment/{classId}")]
         [Authorize(Roles = "Student,Parent")] // Only allow Students and Parents
-        public async Task<IActionResult> CheckEnrollment(string classId)
+        public async Task<IActionResult> CheckEnrollment(string classId, [FromQuery] string? studentId)
         {
-            var userId = User.RequireUserId();
-            var enrollmentCheck = await _assignService.CheckEnrollmentAsync(userId, classId);
+            try
+            {
+                var userId = User.RequireUserId();
+                var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
 
-            var message = enrollmentCheck.IsEnrolled 
-                ? "Học sinh đã vào lớp này." 
-                : "Học sinh chưa vào lớp này.";
+                var result = await _assignService.CheckEnrollmentAsync(userId, role, classId, studentId);
 
-            return Ok(ApiResponse<EnrollmentCheckDto>.Ok(enrollmentCheck, message));
+                return Ok(ApiResponse<EnrollmentCheckDto>.Ok(result));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>
@@ -104,11 +150,20 @@ namespace TPEdu_API.Controllers.ScheduleController
         ///// </summary>
         [HttpGet("my-tutors")]
         [Authorize(Roles = "Student,Parent")] // Only allow Students and Parents
-        public async Task<IActionResult> GetMyTutors()
+        public async Task<IActionResult> GetMyTutors([FromQuery] string? childId)
         {
-            var userId = User.GetUserId(); // take from Claims
-            var result = await _assignService.GetMyTutorsAsync(userId);
-            return Ok(ApiResponse<List<RelatedResourceDto>>.Ok(result));
+            try
+            {
+                var userId = User.RequireUserId();
+                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+                var result = await _assignService.GetMyTutorsAsync(userId, role, childId);
+                return Ok(ApiResponse<List<RelatedResourceDto>>.Ok(result));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         ///// <summary>
@@ -118,7 +173,7 @@ namespace TPEdu_API.Controllers.ScheduleController
         [Authorize(Roles = "Tutor")] // Only Tutor can call
         public async Task<IActionResult> GetMyStudents()
         {
-            var userId = User.GetUserId(); // take from Claims
+            var userId = User.RequireUserId();
             var result = await _assignService.GetMyStudentsAsync(userId);
             return Ok(ApiResponse<List<RelatedResourceDto>>.Ok(result));
         }

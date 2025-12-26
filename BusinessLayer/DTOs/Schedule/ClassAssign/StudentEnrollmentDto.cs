@@ -6,6 +6,7 @@ namespace BusinessLayer.DTOs.Schedule.ClassAssign
     public class StudentEnrollmentDto
     {
         public string StudentId { get; set; } = null!;
+        public string? StudentUserId { get; set; } // UserId của học sinh (để nhắn tin)
         public string StudentName { get; set; } = null!;
         public string? StudentEmail { get; set; }
         public string? StudentAvatarUrl { get; set; }

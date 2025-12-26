@@ -36,39 +36,48 @@ namespace DataLayer.Repositories.Schedule
 
         public async Task<bool> IsApprovedAsync(string classId, string studentProfileId)
         {
+            // Chỉ coi là đã đăng ký nếu:
+            // 1. ApprovalStatus == Approved
+            // 2. PaymentStatus != Refunded (chưa rút khỏi lớp)
+            // 3. PaymentStatus có thể là Paid (đã thanh toán) hoặc Pending (chưa thanh toán)
             return await _dbSet
                 .AsNoTracking()
                 .AnyAsync(ca => ca.ClassId == classId
                              && ca.StudentId == studentProfileId
-                             && ca.ApprovalStatus == ApprovalStatus.Approved);
+                             && ca.ApprovalStatus == ApprovalStatus.Approved
+                             && ca.PaymentStatus != PaymentStatus.Refunded);
         }
 
         public async Task<bool> IsAnyChildApprovedAsync(string classId, List<string> studentProfileIds)
         {
             // _dbSet ở đây là IQueryable<ClassAssign> nên có thể dùng AnyAsync
+            // Chỉ coi là đã đăng ký nếu PaymentStatus != Refunded (chưa rút khỏi lớp)
             return await _dbSet
                 .AsNoTracking()
                 .AnyAsync(ca => ca.ClassId == classId
                              && ca.StudentId != null
                              && studentProfileIds.Contains(ca.StudentId) // Kiểm tra xem có bất kỳ ID con nào trong danh sách
-                             && ca.ApprovalStatus == ApprovalStatus.Approved);
+                             && ca.ApprovalStatus == ApprovalStatus.Approved
+                             && ca.PaymentStatus != PaymentStatus.Refunded);
         }
 
         public async Task<List<User>> GetParticipantsInClassAsync(string classId)
         {
-            // Lấy tất cả Student User
+            // Lấy tất cả Student User (chỉ những người chưa rút khỏi lớp)
             var studentUsers = await _dbSet
                 .Where(ca => ca.ClassId == classId &&
                              ca.ApprovalStatus == ApprovalStatus.Approved &&
+                             ca.PaymentStatus != PaymentStatus.Refunded && // Chưa rút khỏi lớp
                              ca.Student != null &&
                              ca.Student.User != null)
                 .Select(ca => ca.Student!.User!)
                 .ToListAsync();
 
-            // Lấy tất cả Parent User
+            // Lấy tất cả Parent User (chỉ những người chưa rút khỏi lớp)
             var parentUsers = await _dbSet
                 .Where(ca => ca.ClassId == classId &&
                              ca.ApprovalStatus == ApprovalStatus.Approved &&
+                             ca.PaymentStatus != PaymentStatus.Refunded && // Chưa rút khỏi lớp
                              ca.Student != null)
                 .SelectMany(ca => ca.Student!.ParentProfiles.Select(pp => pp.User)) // Join qua Student -> ParentProfile -> User
                 .Where(user => user != null)
@@ -125,6 +134,17 @@ namespace DataLayer.Repositories.Schedule
 
             return await query.OrderByDescending(ca => ca.EnrolledAt ?? ca.CreatedAt)
                              .ToListAsync();
+        }
+
+        public async Task<List<string>> GetStudentIdsInClassAsync(string classId)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Where(ca => ca.ClassId == classId 
+                    && ca.StudentId != null 
+                    && ca.ApprovalStatus == ApprovalStatus.Approved)
+                .Select(ca => ca.StudentId!)
+                .ToListAsync();
         }
     }
 }

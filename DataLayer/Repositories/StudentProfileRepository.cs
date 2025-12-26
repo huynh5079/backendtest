@@ -23,5 +23,13 @@ namespace DataLayer.Repositories
                            .Where(s => s.UserId == userId && s.DeletedAt == null)
                            .Select(s => s.Id)
                            .FirstOrDefaultAsync();
+
+        public async Task<StudentProfile?> GetByUserIdWithUserAsync(string userId)
+            => await _dbSet.Include(s => s.User)
+                           .FirstOrDefaultAsync(s => s.UserId == userId && s.DeletedAt == null);
+
+        public async Task<StudentProfile?> GetByIdWithUserAsync(string id)
+            => await _dbSet.Include(s => s.User)
+                           .FirstOrDefaultAsync(s => s.Id == id && s.DeletedAt == null);
     }
 }

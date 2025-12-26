@@ -1,4 +1,5 @@
 using BusinessLayer.DTOs.Schedule.ClassRequest;
+using BusinessLayer.DTOs.Schedule.TutorApplication;
 using DataLayer.Entities;
 
 namespace BusinessLayer.Service.Interface.IScheduleService
@@ -10,14 +11,14 @@ namespace BusinessLayer.Service.Interface.IScheduleService
         Task<ClassRequestResponseDto?> UpdateClassRequestAsync(string actorUserId, string userRole, string requestId, UpdateClassRequestDto dto);
         Task<bool> UpdateClassRequestScheduleAsync(string actorUserId, string userRole, string requestId, List<ClassRequestScheduleDto> scheduleDtos);
         Task<bool> CancelClassRequestAsync(string actorUserId, string userRole, string requestId);
-        Task<IEnumerable<ClassRequestResponseDto>> GetMyClassRequestsAsync(string actorUserId, string userRole);
+        Task<IEnumerable<ClassRequestResponseDto>> GetMyClassRequestsAsync(string actorUserId, string userRole, string? specificChildId = null);
 
         // --- TUTOR's Actions ---
         Task<IEnumerable<ClassRequestResponseDto>> GetDirectRequestsAsync(string tutorUserId);
         /// <summary>
         /// Respond to direct request. Returns ClassId if accept=true, null if reject.
         /// </summary>
-        Task<string?> RespondToDirectRequestAsync(string tutorUserId, string requestId, bool accept);
+        Task<AcceptRequestResponseDto?> RespondToDirectRequestAsync(string tutorUserId, string requestId, bool accept, string? meetingLink = null);
 
         // --- PUBLIC/SHARED Actions ---
         Task<ClassRequestResponseDto?> GetClassRequestByIdAsync(string id);
@@ -28,7 +29,10 @@ namespace BusinessLayer.Service.Interface.IScheduleService
             string? subject = null,
             string? educationLevel = null, 
             string? mode = null, 
-            string? locationContains = null); 
+            string? locationContains = null);
+        Task<(IEnumerable<ClassRequestResponseDto> Data, int TotalCount)> GetMarketplaceForTutorAsync(
+            string userId, int page, int pageSize, string? subject,
+            string? educationLevel, string? mode, string? locationContains);
 
         // --- ADMIN/SYSTEM Actions ---
         Task<bool> UpdateClassRequestStatusAsync(string id, UpdateStatusDto dto);

@@ -20,6 +20,11 @@ public partial class Report : BaseEntity
 
     public ReportStatus Status { get; set; }
 
+    // Student response to auto-report (for excessive absences)
+    public StudentResponseAction? StudentResponse { get; set; }
+    
+    public DateTime? StudentRespondedAt { get; set; }
+
     public virtual User? Reporter { get; set; }
 
     public virtual Lesson? TargetLesson { get; set; }

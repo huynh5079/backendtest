@@ -114,14 +114,12 @@ namespace BusinessLayer.Service
 
             // Cập nhật đúng luồng bạn yêu cầu
             user.Status = AccountStatus.Active;
-            user.UpdatedAt = DateTime.Now;
             await _uow.Users.UpdateAsync(user);
 
             profile.ApprovedByAdmin = true;
             profile.ReviewStatus = ReviewStatus.Approved;
             profile.RejectReason = null;
             profile.ProvideNote = null;
-            profile.UpdatedAt = DateTime.Now;
             await _uow.TutorProfiles.UpdateAsync(profile);
 
             await _uow.SaveChangesAsync();
@@ -149,14 +147,12 @@ namespace BusinessLayer.Service
                 return (false, "trạng thái không hợp lệ để từ chối");
 
             user.Status = AccountStatus.Rejected;
-            user.UpdatedAt = DateTime.Now;
             await _uow.Users.UpdateAsync(user);
 
             profile.ApprovedByAdmin = false;
             profile.ReviewStatus = ReviewStatus.Rejected;
             profile.RejectReason = rejectReason;
             profile.ProvideNote = null;
-            profile.UpdatedAt = DateTime.Now;
             await _uow.TutorProfiles.UpdateAsync(profile);
 
             await _uow.SaveChangesAsync();
@@ -187,7 +183,6 @@ namespace BusinessLayer.Service
 
             profile.ReviewStatus = ReviewStatus.Pending;
             profile.ProvideNote = note;
-            profile.UpdatedAt = DateTime.Now;
 
             await _uow.TutorProfiles.UpdateAsync(profile);
             await _uow.SaveChangesAsync();

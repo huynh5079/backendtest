@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TPEdu_API.Common.Extensions;
 using System.Linq;
+using DataLayer.Repositories.Abstraction;
 
 namespace TPEdu_API.Controllers
 {
@@ -14,10 +15,12 @@ namespace TPEdu_API.Controllers
     public class WalletController : ControllerBase
     {
         private readonly IWalletService _walletService;
+        private readonly IUnitOfWork _uow;
 
-        public WalletController(IWalletService walletService)
+        public WalletController(IWalletService walletService, IUnitOfWork uow)
         {
             _walletService = walletService;
+            _uow = uow;
         }
 
         [HttpGet("me")]
@@ -43,17 +46,31 @@ namespace TPEdu_API.Controllers
         {
             var userId = User.RequireUserId();
             var (items, total) = await _walletService.GetMyTransactionsAsync(userId, pageNumber, pageSize);
-            var transactions = items.Select(t => new TransactionDto
+            
+            var transactionList = new List<TransactionDto>();
+            foreach (var t in items)
             {
-                Id = t.Id,
-                WalletId = t.WalletId,
-                Type = t.Type.ToString(),
-                Amount = t.Amount,
-                Status = t.Status.ToString(),
-                Note = t.Note,
-                CreatedAt = t.CreatedAt
-            });
-            return Ok(new { items = transactions, page = pageNumber, size = pageSize, total });
+                string? counterpartyUsername = null;
+                if (!string.IsNullOrEmpty(t.CounterpartyUserId))
+                {
+                    counterpartyUsername = await _walletService.GetUsernameByUserIdAsync(t.CounterpartyUserId);
+                }
+
+                transactionList.Add(new TransactionDto
+                {
+                    Id = t.Id,
+                    WalletId = t.WalletId,
+                    Type = t.Type.ToString(),
+                    Amount = t.Amount,
+                    Status = t.Status.ToString(),
+                    Note = t.Note,
+                    CounterpartyUserId = t.CounterpartyUserId,
+                    CounterpartyUsername = counterpartyUsername,
+                    CreatedAt = t.CreatedAt
+                });
+            }
+            
+            return Ok(new { items = transactionList, page = pageNumber, size = pageSize, total });
         }
 
         [HttpPost("deposit")]
@@ -65,6 +82,10 @@ namespace TPEdu_API.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// Rút tiền từ ví của chính mình
+        /// Cho phép tất cả các role rút tiền
+        /// </summary>
         [HttpPost("withdraw")]
         public async Task<IActionResult> Withdraw([FromBody] DepositWithdrawDto dto)
         {

@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace DataLayer.Repositories.Schedule
 {
@@ -47,7 +48,9 @@ namespace DataLayer.Repositories.Schedule
                 .Include(c => c.Tutor)
                     .ThenInclude(t => t!.User)
                 .Include(c => c.ClassSchedules)
-                .Where(c => c.Status == ClassStatus.Active && c.CurrentStudentCount < c.StudentLimit);
+                .Where(c => c.Status == ClassStatus.Pending 
+                         && c.DeletedAt == null
+                         && c.CurrentStudentCount < c.StudentLimit);
 
             // Search by keyword
             if (!string.IsNullOrWhiteSpace(keyword))
@@ -102,6 +105,13 @@ namespace DataLayer.Repositories.Schedule
             {
                 q = q.Where(c => c.Status == status.Value);
             }
+            else
+            {
+                q = q.Where(c => c.Status == ClassStatus.Pending || c.Status == ClassStatus.Pending);
+            }
+
+            q = q.Include(c => c.ClassSchedules)
+                 .Include(c => c.Tutor).ThenInclude(t => t.User);
 
             // Order by created date
             q = q.OrderByDescending(c => c.CreatedAt);

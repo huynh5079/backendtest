@@ -38,6 +38,8 @@ namespace TPEdu_API.Controllers
         [HttpGet("tutor")]
         public async Task<IActionResult> GetTutors([FromQuery] int page = 1)
         {
+            // Validate page >= 1
+            if (page < 1) page = 1;
             var rs = await _svcDirectory.GetTutorsPagedAsync(page, 5);
             var data = rs.Data.Select(x => new
             {
@@ -48,7 +50,14 @@ namespace TPEdu_API.Controllers
                 isBanned = x.IsBanned,
                 createDate = x.CreateDate
             });
-            return Ok(ApiResponse<object>.Ok(data, "lấy danh sách thành công"));
+            return Ok(ApiResponse<object>.Ok(new 
+            { 
+                items = data, 
+                page = rs.PageNumber, 
+                size = rs.PageSize, 
+                total = rs.TotalCount,
+                totalPages = rs.TotalPages
+            }, "lấy danh sách thành công"));
         }
 
         // GET tpedu/v1/admin/tutor/detail/:id

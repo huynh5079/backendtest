@@ -30,6 +30,21 @@ namespace BusinessLayer.Service.Interface
         /// Lấy conversation theo ID
         /// </summary>
         Task<ConversationDto?> GetConversationByIdAsync(string conversationId, string userId);
+
+        /// <summary>
+        /// Xóa conversation của lớp học (khi hủy hoặc hoàn thành lớp)
+        /// </summary>
+        Task<bool> DeleteClassConversationAsync(string classId);
+
+        /// <summary>
+        /// Xóa participant khỏi conversation (khi học sinh rút khỏi lớp group)
+        /// </summary>
+        Task<bool> RemoveParticipantFromClassConversationAsync(string classId, string userId);
+
+        /// <summary>
+        /// User xóa conversation của mình (remove participant khỏi conversation)
+        /// </summary>
+        Task<bool> RemoveUserFromConversationAsync(string conversationId, string userId);
     }
 }
 

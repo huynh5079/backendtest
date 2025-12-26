@@ -14,5 +14,6 @@ namespace DataLayer.Repositories.Abstraction
         Task<IReadOnlyList<Media>> GetByOwnerAsync(string ownerUserId);
         Task<IReadOnlyList<Media>> GetByOwnerAndContextAsync(string ownerUserId, UploadContext context);
         Task<IReadOnlyList<Media>> GetCertificatesByTutorProfileAsync(string tutorProfileId);
+        Task<int> CountByOwnerAndContextAsync(string ownerUserId, UploadContext context);
     }
 }

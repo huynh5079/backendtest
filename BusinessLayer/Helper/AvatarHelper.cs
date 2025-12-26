@@ -9,17 +9,86 @@ namespace BusinessLayer.Helper
 {
     public static class AvatarHelper
     {
-        private const string Base = "https://avatar.iran.liara.run/public";
+        // DiceBear API v9.x với CDN Cloudflare - nhanh và ổn định
+        // Style: avataaars (cartoon Bitmoji-style)
+        private const string Base = "https://api.dicebear.com/9.x/avataaars/svg";
 
-        public static string ForStudent() => Base; 
-        public static string ForParent() => Base; 
+        /// <summary>
+        /// Tạo avatar cho Student (random seed)
+        /// </summary>
+        public static string ForStudent()
+        {
+            var seed = Guid.NewGuid().ToString("N")[..8];
+            return $"{Base}?seed={seed}";
+        }
 
-        // Tutor: phân theo giới tính
+        /// <summary>
+        /// Tạo avatar cho Parent (random seed)
+        /// </summary>
+        public static string ForParent()
+        {
+            var seed = Guid.NewGuid().ToString("N")[..8];
+            return $"{Base}?seed={seed}";
+        }
+
+        /// <summary>
+        /// Tạo avatar cho Tutor theo giới tính (dùng prefix seed để tạo style khác)
+        /// </summary>
         public static string ForTutor(Gender? gender)
         {
-            if (gender == Gender.Female) return $"{Base}/girl";
-            if (gender == Gender.Male) return $"{Base}/boy";
-            return Base;
+            var seed = Guid.NewGuid().ToString("N")[..8];
+            
+            // Dùng prefix seed để tạo ra style khác nhau cho male/female
+            return gender switch
+            {
+                Gender.Female => $"{Base}?seed=female_{seed}",
+                Gender.Male => $"{Base}?seed=male_{seed}",
+                _ => $"{Base}?seed={seed}"
+            };
+        }
+
+        /// <summary>
+        /// Tạo avatar với seed cố định (dùng userId để avatar consistent)
+        /// </summary>
+        public static string ForUser(string userId, Gender? gender = null)
+        {
+            return gender switch
+            {
+                Gender.Female => $"{Base}?seed=f_{userId}",
+                Gender.Male => $"{Base}?seed=m_{userId}",
+                _ => $"{Base}?seed={userId}"
+            };
+        }
+
+        /// <summary>
+        /// Validate avatar file (type and size)
+        /// </summary>
+        /// <param name="file">Avatar file to validate</param>
+        /// <exception cref="ArgumentException">Thrown when file is invalid</exception>
+        public static void ValidateAvatarFile(Microsoft.AspNetCore.Http.IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                throw new ArgumentException("File avatar không được để trống.");
+
+            // Check file size (20MB max)
+            const long maxSize = 20_000_000; // 20MB
+            if (file.Length > maxSize)
+                throw new ArgumentException($"File avatar quá lớn. Kích thước tối đa: {maxSize / 1_000_000}MB.");
+
+            // Check file type
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            
+            if (!allowedExtensions.Contains(extension))
+                throw new ArgumentException($"Định dạng file không hợp lệ. Chỉ chấp nhận: {string.Join(", ", allowedExtensions)}");
+
+            // Check MIME type
+            var allowedMimeTypes = new[] { "image/jpeg", "image/png", "image/webp" };
+            if (!allowedMimeTypes.Contains(file.ContentType.ToLowerInvariant()))
+                throw new ArgumentException("Loại file không hợp lệ. Chỉ chấp nhận file ảnh (JPG, PNG, WEBP).");
         }
     }
 }
+
+
+

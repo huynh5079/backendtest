@@ -30,5 +30,11 @@ namespace DataLayer.Repositories.Abstraction
         Task<TutorProfile?> GetApprovedByUserIdAsync(string userId);
         Task<string?> GetTutorUserIdByTutorProfileIdAsync(string tutorProfileId);
         Task<string?> GetIdByUserIdAsync(string userId);
+        
+        /// <summary>
+        /// Lấy top N tutors có rating cao nhất (đã approved)
+        /// </summary>
+        Task<IReadOnlyList<TutorProfile>> GetTopRatedAsync(int count);
     }
 }
+

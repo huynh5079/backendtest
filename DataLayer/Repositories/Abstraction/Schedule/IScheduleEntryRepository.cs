@@ -11,5 +11,10 @@ namespace DataLayer.Repositories.Abstraction.Schedule
     public interface IScheduleEntryRepository : IGenericRepository<ScheduleEntry>
     {
         Task<ScheduleEntry?> GetTutorConflictAsync(string tutorProfileId, DateTime startTime, DateTime endTime, string? entryIdToIgnore = null);
+        
+        /// <summary>
+        /// Kiểm tra xung đột lịch cho học sinh dựa trên các lớp đã được approved
+        /// </summary>
+        Task<ScheduleEntry?> GetStudentConflictAsync(string studentProfileId, DateTime startTime, DateTime endTime, string? entryIdToIgnore = null);
     }
 }

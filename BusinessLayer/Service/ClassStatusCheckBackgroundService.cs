@@ -13,7 +13,7 @@ namespace BusinessLayer.Service
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<ClassStatusCheckBackgroundService> _logger;
-        private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(5); // Chạy mỗi 5 phút
+        private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(30); // Run every 30 minutes
 
         public ClassStatusCheckBackgroundService(
             IServiceProvider serviceProvider,
@@ -31,7 +31,6 @@ namespace BusinessLayer.Service
             {
                 try
                 {
-                    // Tạo scope để inject scoped services
                     using var scope = _serviceProvider.CreateScope();
                     var classStatusCheckService = scope.ServiceProvider.GetRequiredService<IClassStatusCheckService>();
 
@@ -41,7 +40,7 @@ namespace BusinessLayer.Service
                     
                     if (updatedCount > 0)
                     {
-                        _logger.LogInformation("Đã cập nhật {Count} lớp sang trạng thái Ongoing", updatedCount);
+                        _logger.LogInformation($"Đã cập nhật trạng thái cho {updatedCount} lớp học");
                     }
                 }
                 catch (Exception ex)
@@ -49,7 +48,7 @@ namespace BusinessLayer.Service
                     _logger.LogError(ex, "Lỗi khi chạy background job kiểm tra trạng thái lớp học");
                 }
 
-                // Đợi 5 phút trước khi chạy lại
+                // wait 30min for the next interval
                 await Task.Delay(_checkInterval, stoppingToken);
             }
 

@@ -26,5 +26,22 @@ namespace BusinessLayer.Service.Interface
         Task<IEnumerable<AttendanceRecordDto>> GetLessonAttendanceAsync(string tutorUserId, string lessonId);
 
         Task<List<LessonRosterItemDto>> GetLessonRosterForTutorAsync(string tutorUserId, string lessonId);
+
+        // ========== NEW: Class-Based Attendance Methods ==========
+
+        // Tutor: Get overview của class (both tabs)
+        Task<ClassAttendanceOverviewDto> GetClassAttendanceOverviewAsync(string tutorUserId, string classId);
+
+        // Tutor: Drill down student
+        Task<StudentAttendanceDetailDto> GetStudentAttendanceInClassAsync(string tutorUserId, string classId, string studentId);
+
+        // Tutor: Drill down lesson
+        Task<LessonAttendanceDetailDto> GetLessonAttendanceDetailAsync(string tutorUserId, string lessonId);
+
+        // Student: My attendance in class
+        Task<StudentAttendanceDetailDto> GetMyClassAttendanceAsync(string studentUserId, string classId);
+
+        // Parent: Child attendance in class
+        Task<StudentAttendanceDetailDto> GetChildClassAttendanceAsync(string parentUserId, string studentId, string classId);
     }
 }

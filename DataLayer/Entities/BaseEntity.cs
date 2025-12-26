@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using DataLayer.Helper;
 
 namespace DataLayer.Entities
 {
@@ -14,9 +15,9 @@ namespace DataLayer.Entities
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
         public string Id { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime CreatedAt { get; set; }
 
-        public DateTime UpdatedAt { get; set; } = DateTime.Now;
+        public DateTime UpdatedAt { get; set; }
 
         public DateTime? DeletedAt { get; set; } = null;
 
@@ -24,6 +25,9 @@ namespace DataLayer.Entities
         protected BaseEntity()
         {
             Id = Guid.NewGuid().ToString();
+            var vietnamTime = DateTimeHelper.GetVietnamTime();
+            CreatedAt = vietnamTime;
+            UpdatedAt = vietnamTime;
         }
     }
 }

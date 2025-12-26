@@ -1,4 +1,5 @@
 ﻿using DataLayer.Enum;
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,7 +17,7 @@ namespace BusinessLayer.DTOs.Profile
         public DateOnly? DateOfBirth { get; set; }
 
         // Student fields
-        public string? EducationLevelId { get; set; }
+        public string? EducationLevel { get; set; }
         public string? PreferredSubjects { get; set; }
     }
 }

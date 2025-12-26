@@ -29,7 +29,8 @@ namespace TPEdu_API.Controllers.ScheduleController
             [FromQuery] DateTime endDate,
             [FromQuery] string? entryType,
             [FromQuery] string? classId,
-            [FromQuery] string? studentId)
+            [FromQuery] string? studentId,
+            [FromQuery] string? classStatus)
         {
             if (endDate < startDate)
             {
@@ -38,7 +39,7 @@ namespace TPEdu_API.Controllers.ScheduleController
 
             try
             {
-                var schedule = await _scheduleViewService.GetTutorScheduleAsync(tutorId, startDate, endDate, entryType, classId, studentId);
+                var schedule = await _scheduleViewService.GetTutorScheduleAsync(tutorId, startDate, endDate, entryType, classId, studentId, classStatus);
                 return Ok(ApiResponse<IEnumerable<ScheduleEntryDto>>.Ok(schedule));
             }
             catch (Exception ex)
@@ -58,7 +59,8 @@ namespace TPEdu_API.Controllers.ScheduleController
         public async Task<IActionResult> GetMySchedule(
             [FromQuery] DateTime startDate, 
             [FromQuery] DateTime endDate,
-            [FromQuery] string? tutorId)
+            [FromQuery] string? tutorId,
+            [FromQuery] string? classStatus)
         {
             if (endDate < startDate)
             {
@@ -70,7 +72,7 @@ namespace TPEdu_API.Controllers.ScheduleController
                 // take studentUserId from JWT token
                 var studentUserId = User.RequireUserId();
 
-                var schedule = await _scheduleViewService.GetStudentScheduleAsync(studentUserId, startDate, endDate, tutorId);
+                var schedule = await _scheduleViewService.GetStudentScheduleAsync(studentUserId, startDate, endDate, tutorId, classStatus);
                 return Ok(ApiResponse<IEnumerable<ScheduleEntryDto>>.Ok(schedule));
             }
             catch (Exception ex)
@@ -91,12 +93,14 @@ namespace TPEdu_API.Controllers.ScheduleController
         public async Task<IActionResult> GetChildSchedule(
             string childId, // StudentProfileId
             [FromQuery] DateTime startDate,
-            [FromQuery] DateTime endDate)
+            [FromQuery] DateTime endDate,
+            [FromQuery] string? tutorId,
+            [FromQuery] string? classStatus)
         {
             var parentUserId = User.RequireUserId();
             try
             {
-                var schedule = await _scheduleViewService.GetChildScheduleAsync(parentUserId, childId, startDate, endDate);
+                var schedule = await _scheduleViewService.GetChildScheduleAsync(parentUserId, childId, startDate, endDate, tutorId, classStatus);
                 return Ok(ApiResponse<IEnumerable<ScheduleEntryDto>>.Ok(schedule));
             }
             catch (UnauthorizedAccessException)
@@ -112,10 +116,12 @@ namespace TPEdu_API.Controllers.ScheduleController
         [Authorize(Roles = "Parent")]
         public async Task<IActionResult> GetAllChildrenSchedule(
             [FromQuery] DateTime startDate,
-            [FromQuery] DateTime endDate)
+            [FromQuery] DateTime endDate,
+            [FromQuery] string? tutorId,
+            [FromQuery] string? classStatus)
         {
             var parentUserId = User.RequireUserId();
-            var schedule = await _scheduleViewService.GetAllChildrenScheduleAsync(parentUserId, startDate, endDate);
+            var schedule = await _scheduleViewService.GetAllChildrenScheduleAsync(parentUserId, startDate, endDate, tutorId, classStatus);
             return Ok(ApiResponse<IEnumerable<ScheduleEntryDto>>.Ok(schedule));
         }
     }

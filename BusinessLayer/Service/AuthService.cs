@@ -192,6 +192,10 @@ public class AuthService : IAuthService
         if (!age.HasValue || age.Value < TutorMinAge)
             throw new InvalidOperationException("Gia sư phải đủ 18 tuổi để đăng ký.");
 
+        // Kiểm tra đồng ý chính sách
+        if (!req.AcceptPolicy)
+            throw new InvalidOperationException("Bạn phải đồng ý với chính sách và điều khoản để đăng ký làm gia sư.");
+
         var role = await RequireRole(RoleEnum.Tutor);
         await using var tx = await _uow.BeginTransactionAsync();
         try

@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BusinessLayer.DTOs.Wallet;
+using BusinessLayer.Helper;
 using BusinessLayer.Options;
 using BusinessLayer.Service.Interface;
 using DataLayer.Entities;
@@ -97,16 +99,31 @@ namespace BusinessLayer.Service
             }
         }
 
+        /// <summary>
+        /// Rút tiền từ ví của user
+        /// Cho phép tất cả các role sử dụng
+        /// </summary>
         public async Task<OperationResult> WithdrawAsync(string userId, decimal amount, string? note, CancellationToken ct = default)
         {
-            if (amount <= 0) return new OperationResult { Status = "Fail", Message = "Amount must be > 0" };
+            if (amount <= 0) 
+                return new OperationResult { Status = "Fail", Message = "Số tiền rút phải lớn hơn 0" };
 
             using var tx = await _uow.BeginTransactionAsync();
 
             var wallet = await GetMyWalletAsync(userId, ct);
-            if (wallet.IsFrozen) return new OperationResult { Status = "Fail", Message = "Wallet is frozen" };
-            if (wallet.Balance < amount) return new OperationResult { Status = "Fail", Message = "Insufficient balance" };
+            
+            if (wallet.IsFrozen) 
+                return new OperationResult { Status = "Fail", Message = "Ví của bạn đã bị khóa. Vui lòng liên hệ admin để được hỗ trợ." };
+            
+            if (wallet.Balance < amount) 
+                return new OperationResult { Status = "Fail", Message = $"Số dư không đủ. Số dư hiện tại: {wallet.Balance:N0} VND, Số tiền muốn rút: {amount:N0} VND" };
 
+            // Kiểm tra số tiền tối thiểu (ví dụ: tối thiểu 10,000 VND)
+            const decimal minWithdrawAmount = 10000m;
+            if (amount < minWithdrawAmount)
+                return new OperationResult { Status = "Fail", Message = $"Số tiền rút tối thiểu là {minWithdrawAmount:N0} VND" };
+
+            var oldBalance = wallet.Balance;
             wallet.Balance -= amount;
             
             // Attach wallet để EF track changes
@@ -118,7 +135,8 @@ namespace BusinessLayer.Service
                 Type = TransactionType.Debit,
                 Status = TransactionStatus.Succeeded,
                 Amount = amount,
-                Note = note
+                Note = string.IsNullOrWhiteSpace(note) ? "Rút tiền từ ví" : note,
+                CreatedAt = DateTimeHelper.VietnamNow
             };
             await _uow.Transactions.AddAsync(transaction, ct);
 
@@ -131,7 +149,7 @@ namespace BusinessLayer.Service
                     userId, 
                     NotificationType.WalletWithdraw, 
                     amount, 
-                    note, 
+                    note ?? "Rút tiền từ ví", 
                     transaction.Id, 
                     ct);
                 
@@ -141,11 +159,24 @@ namespace BusinessLayer.Service
                 await _notificationService.SendRealTimeNotificationAsync(userId, notification, ct);
                 
                 await tx.CommitAsync();
-                return new OperationResult { Status = "Ok" };
+                
+                Console.WriteLine($"[WithdrawAsync] ✅ Rút tiền thành công: UserId={userId}, Amount={amount:N0} VND, Balance: {oldBalance:N0} → {wallet.Balance:N0} VND");
+                
+                return new OperationResult 
+                { 
+                    Status = "Ok", 
+                    Message = $"Rút tiền thành công. Số dư còn lại: {wallet.Balance:N0} VND" 
+                };
             }
             catch (DbUpdateConcurrencyException)
             {
-                return new OperationResult { Status = "Fail", Message = "Conflict, please retry" };
+                Console.WriteLine($"[WithdrawAsync] ❌ Concurrency exception khi rút tiền: UserId={userId}, Amount={amount:N0} VND");
+                return new OperationResult { Status = "Fail", Message = "Có lỗi xảy ra, vui lòng thử lại" };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WithdrawAsync] ❌ Lỗi khi rút tiền: UserId={userId}, Amount={amount:N0} VND, Error: {ex.Message}");
+                return new OperationResult { Status = "Fail", Message = $"Lỗi: {ex.Message}" };
             }
         }
 
@@ -353,6 +384,70 @@ namespace BusinessLayer.Service
             {
                 return new OperationResult { Status = "Fail", Message = "Conflict, please retry" };
             }
+        }
+
+        public async Task<string?> GetUsernameByUserIdAsync(string userId, CancellationToken ct = default)
+        {
+            var user = await _uow.Users.GetByIdAsync(userId);
+            return user?.UserName;
+        }
+
+        public async Task<(IEnumerable<Transaction> items, int total)> GetTransactionsForAdminAsync(
+            string? role,
+            TransactionType? type,
+            TransactionStatus? status,
+            DateTime? startDate,
+            DateTime? endDate,
+            int page,
+            int pageSize,
+            CancellationToken ct = default)
+        {
+            return await _uow.Transactions.GetTransactionsForAdminAsync(
+                role,
+                type,
+                status,
+                startDate,
+                endDate,
+                page,
+                pageSize,
+                ct);
+        }
+
+        public async Task<Transaction?> GetTransactionDetailForAdminAsync(string transactionId, CancellationToken ct = default)
+        {
+            return await _uow.Transactions.GetByIdAsync(transactionId);
+        }
+
+        /// <summary>
+        /// Unsave changes wallet for schedule rollback
+        /// Run in Transactionscope of caller
+        /// </summary>
+        public async Task ProcessPaymentActionAsync(string userId, decimal amount, string description, CancellationToken ct = default)
+        {
+            // Get Wallet
+            var wallet = await _uow.Wallets.GetByUserIdAsync(userId, ct);
+            if (wallet == null) throw new Exception("Ví không tồn tại.");
+
+            // Validate
+            if (wallet.Balance < amount)
+                throw new InvalidOperationException($"Số dư không đủ. Cần: {amount:N0}, Hiện có: {wallet.Balance:N0}");
+
+            // Logic update in-memory
+            wallet.Balance -= amount;
+
+            // Add Transaction Entity (Unsaved)
+            var transaction = new Transaction
+            {
+                WalletId = wallet.Id,
+                Amount = -amount,
+                Type = TransactionType.Debit,
+                Status = TransactionStatus.Succeeded,
+                Note = description,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _uow.Transactions.AddAsync(transaction, ct);
+            await _uow.Wallets.UpdateAsync(wallet);
         }
     }
 }

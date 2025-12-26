@@ -128,11 +128,21 @@ namespace TPEdu_API.Controllers
 
         [HttpGet("my-classes")]
         [Authorize(Roles = "Tutor")]
-        public async Task<IActionResult> GetMyClasses()
+        public async Task<IActionResult> GetMyClasses([FromQuery] ClassStatus? status)
         {
             var tutorUserId = User.RequireUserId();
-            var classes = await _classService.GetMyClassesAsync(tutorUserId);
+            var classes = await _classService.GetMyClassesAsync(tutorUserId, status);
             return Ok(ApiResponse<IEnumerable<ClassDto>>.Ok(classes));
+        }
+
+        [HttpGet("tutor/{tutorId}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicTutorClasses(string tutorId)
+        {
+            var result = await _classService.GetPublicClassesByTutorAsync(tutorId);
+
+            // Sử dụng static method Success
+            return Ok(ApiResponse<IEnumerable<ClassDto>>.Ok(result, "Lấy danh sách lớp học của gia sư thành công."));
         }
 
         /// <summary>
@@ -173,9 +183,28 @@ namespace TPEdu_API.Controllers
         [Authorize(Roles = "Tutor")]
         public async Task<IActionResult> DeleteClass(string id)
         {
-            var tutorUserId = User.RequireUserId();
-            await _classService.DeleteClassAsync(tutorUserId, id);
-            return Ok(ApiResponse<object>.Ok(null, "Xóa lớp học thành công."));
+            try
+            {
+                var tutorUserId = User.RequireUserId();
+                await _classService.DeleteClassAsync(tutorUserId, id);
+                return Ok(ApiResponse<object>.Ok(null, "Xóa lớp học thành công."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
         }
         #endregion
 
@@ -187,9 +216,52 @@ namespace TPEdu_API.Controllers
         [Authorize(Roles = "Tutor")]
         public async Task<IActionResult> CompleteClass(string id)
         {
-            var tutorUserId = User.RequireUserId();
-            await _classService.CompleteClassAsync(tutorUserId, id);
-            return Ok(ApiResponse<object>.Ok(null, "Đã hoàn thành lớp học và giải ngân escrow thành công."));
+            try
+            {
+                var tutorUserId = User.RequireUserId();
+                await _classService.CompleteClassAsync(tutorUserId, id);
+                return Ok(ApiResponse<object>.Ok(null, "Đã hoàn thành lớp học và giải ngân escrow thành công."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
+
+        /// <summary>
+        /// [Tutor] Đồng bộ lại trạng thái các buổi học đã điểm danh đủ
+        /// </summary>
+        [HttpPost("{id}/sync-lesson-status")]
+        [Authorize(Roles = "Tutor")]
+        public async Task<IActionResult> SyncLessonStatus(string id)
+        {
+            try
+            {
+                var completedCount = await _classService.SyncLessonStatusForClassAsync(id);
+                return Ok(ApiResponse<object>.Ok(
+                    new { completedLessons = completedCount }, 
+                    $"Đã đồng bộ {completedCount} buổi học thành công."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
         }
 
         /// <summary>
@@ -201,9 +273,28 @@ namespace TPEdu_API.Controllers
         [Authorize(Roles = "Tutor")]
         public async Task<IActionResult> CancelClassByTutor(string id, [FromBody] CancelClassByTutorRequestDto? request = null)
         {
-            var tutorUserId = User.RequireUserId();
-            var result = await _classService.CancelClassByTutorAsync(tutorUserId, id, request?.Reason);
-            return Ok(ApiResponse<CancelClassResponseDto>.Ok(result, result.Message));
+            try
+            {
+                var tutorUserId = User.RequireUserId();
+                var result = await _classService.CancelClassByTutorAsync(tutorUserId, id, request?.Reason);
+                return Ok(ApiResponse<CancelClassResponseDto>.Ok(result, result.Message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
         }
         #endregion
     }

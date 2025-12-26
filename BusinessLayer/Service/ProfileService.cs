@@ -6,6 +6,7 @@ using BusinessLayer.Utils;
 using DataLayer.Entities;
 using DataLayer.Enum;
 using DataLayer.Repositories.Abstraction;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -39,6 +40,8 @@ namespace BusinessLayer.Service
             // sp có thể null nếu chưa provision – vẫn trả user basic
             return new StudentProfileDto
             {
+                StudentUserId = userId,
+                StudentProfileId = sp?.Id,
                 Username = u.UserName,
                 Email = u.Email,
                 Phone = u.Phone,
@@ -117,7 +120,8 @@ namespace BusinessLayer.Service
                 TeachingSubjects = tp?.TeachingSubjects,
                 TeachingLevel = tp?.TeachingLevel,
                 SpecialSkills = tp?.SpecialSkills,
-                Rating = tp?.Rating
+                Rating = tp?.Rating,
+                ReviewStatus = tp?.ReviewStatus.ToString()
             };
 
             // Media (nếu cần)
@@ -149,7 +153,7 @@ namespace BusinessLayer.Service
             return dto;
         }
 
-        public async Task UpdateStudentAsync(string userId, UpdateStudentProfileRequest dto)
+        public async Task UpdateStudentAsync(string userId, UpdateStudentProfileRequest dto, CancellationToken ct = default)
         {
             var user = await _uow.Users.GetByIdAsync(userId) ?? throw new InvalidOperationException("User không tồn tại");
             if (user.RoleName != nameof(RoleEnum.Student))
@@ -172,7 +176,7 @@ namespace BusinessLayer.Service
             await _uow.Users.UpdateAsync(user);
 
             var sp = await _uow.StudentProfiles.GetByUserIdAsync(userId) ?? new StudentProfile { UserId = userId };
-            //if (dto.EducationLevelId != null) sp.EducationLevelId = dto.EducationLevelId;
+            if (dto.EducationLevel != null) sp.EducationLevel = dto.EducationLevel;
             if (dto.PreferredSubjects != null) sp.PreferredSubjects = dto.PreferredSubjects;
 
             if (string.IsNullOrEmpty(sp.Id))
@@ -183,7 +187,7 @@ namespace BusinessLayer.Service
             await _uow.SaveChangesAsync();
         }
 
-        public async Task UpdateParentAsync(string userId, UpdateParentProfileRequest dto)
+        public async Task UpdateParentAsync(string userId, UpdateParentProfileRequest dto, CancellationToken ct = default)
         {
             var user = await _uow.Users.GetByIdAsync(userId) ?? throw new InvalidOperationException("User không tồn tại");
             if (user.RoleName != nameof(RoleEnum.Parent))
@@ -204,15 +208,6 @@ namespace BusinessLayer.Service
             }
 
             await _uow.Users.UpdateAsync(user);
-
-            var pp = await _uow.ParentProfiles.GetByUserIdAsync(userId) ?? new ParentProfile { UserId = userId };
-            if (dto.Relationship != null) pp.Relationship = dto.Relationship;
-
-            if (string.IsNullOrEmpty(pp.Id))
-                await _uow.ParentProfiles.CreateAsync(pp);
-            else
-                await _uow.ParentProfiles.UpdateAsync(pp);
-
             await _uow.SaveChangesAsync();
         }
 
@@ -236,12 +231,6 @@ namespace BusinessLayer.Service
                 user.DateOfBirth = dto.DateOfBirth;
             }
 
-            // avatar (optional)
-            if (dto.AvatarFile is { Length: > 0 })
-            {
-                var ups = await _storage.UploadManyAsync(new[] { dto.AvatarFile }, UploadContext.Avatar, userId, ct);
-                user.AvatarUrl = ups.First().Url;
-            }
             await _uow.Users.UpdateAsync(user);
 
             var tp = await _uow.TutorProfiles.GetByUserIdAsync(userId) ?? new TutorProfile { UserId = userId };
@@ -265,6 +254,133 @@ namespace BusinessLayer.Service
                 await _media.SaveTutorCertificatesAsync(userId, tp.Id!, ups);
             }
 
+            await _uow.SaveChangesAsync();
+        }
+
+        public async Task<string> UpdateAvatarAsync(string userId, IFormFile avatarFile, CancellationToken ct = default)
+        {
+            // Validate avatar file
+            Helper.AvatarHelper.ValidateAvatarFile(avatarFile);
+
+            // Get user
+            var user = await _uow.Users.GetByIdAsync(userId) 
+                ?? throw new KeyNotFoundException("Không tìm thấy user.");
+
+            // Upload avatar
+            var uploads = await _storage.UploadManyAsync(new[] { avatarFile }, UploadContext.Avatar, userId, ct);
+            var newAvatarUrl = uploads.First().Url;
+
+            // Update user avatar URL
+            user.AvatarUrl = newAvatarUrl;
+            await _uow.Users.UpdateAsync(user);
+            await _uow.SaveChangesAsync();
+
+            return newAvatarUrl;
+        }
+
+        // ========== CERTIFICATE MANAGEMENT ==========
+
+        public async Task<List<MediaItemDto>> UploadTutorCertificatesAsync(
+            string userId, List<IFormFile> certificates, CancellationToken ct = default)
+        {
+            // 1. Validate user is Tutor
+            var tutor = await _uow.TutorProfiles.GetByUserIdAsync(userId)
+                ?? throw new UnauthorizedAccessException("Chỉ gia sư mới có thể upload chứng chỉ");
+
+            // 2. Upload files
+            var uploads = await _storage.UploadManyAsync(certificates, UploadContext.Certificate, userId, ct);
+
+            // 3. Save to database
+            var mediaList = await _media.SaveTutorCertificatesAsync(userId, tutor.Id!, uploads);
+
+            // 5. Map to DTO
+            return mediaList.Select(m => new MediaItemDto
+            {
+                Id = m.Id,
+                Url = m.FileUrl,
+                FileName = m.FileName,
+                ContentType = m.MediaType,
+                FileSize = m.FileSize
+            }).ToList();
+        }
+
+        public async Task DeleteTutorCertificateAsync(string userId, string mediaId, CancellationToken ct = default)
+        {
+            // 1. Get media record
+            var media = await _uow.Media.GetByIdAsync(mediaId)
+                ?? throw new KeyNotFoundException("Không tìm thấy chứng chỉ");
+
+            // 2. Validate ownership
+            if (media.OwnerUserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền xóa chứng chỉ này");
+
+            // 3. Validate context
+            if (media.Context != UploadContext.Certificate)
+                throw new InvalidOperationException("File này không phải là chứng chỉ");
+
+            // 4. Delete from cloud storage
+            if (!string.IsNullOrEmpty(media.ProviderPublicId))
+            {
+                await _storage.DeleteAsync(media.ProviderPublicId, media.MediaType, ct);
+            }
+
+            // 5. Delete from database
+            await _uow.Media.RemoveAsync(media);
+            await _uow.SaveChangesAsync();
+        }
+
+        // ========== IDENTITY DOCUMENT MANAGEMENT ==========
+
+        public async Task<List<MediaItemDto>> UploadTutorIdentityDocumentsAsync(
+            string userId, List<IFormFile> documents, CancellationToken ct = default)
+        {
+            // 1. Validate user exists
+            var user = await _uow.Users.GetByIdAsync(userId)
+                ?? throw new KeyNotFoundException("Không tìm thấy người dùng");
+
+            // 2. Validate role (Tutor only)
+            if (user.RoleName != "Tutor")
+                throw new UnauthorizedAccessException("Chỉ gia sư mới có thể upload giấy tờ tùy thân");
+
+            // 3. Upload files
+            var uploads = await _storage.UploadManyAsync(documents, UploadContext.IdentityDocument, userId, ct);
+
+            // 4. Save to database
+            var mediaList = await _media.SaveTutorIdentityDocsAsync(userId, uploads);
+
+            // 6. Map to DTO
+            return mediaList.Select(m => new MediaItemDto
+            {
+                Id = m.Id,
+                Url = m.FileUrl,
+                FileName = m.FileName,
+                ContentType = m.MediaType,
+                FileSize = m.FileSize
+            }).ToList();
+        }
+
+        public async Task DeleteTutorIdentityDocumentAsync(string userId, string mediaId, CancellationToken ct = default)
+        {
+            // 1. Get media record
+            var media = await _uow.Media.GetByIdAsync(mediaId)
+                ?? throw new KeyNotFoundException("Không tìm thấy giấy tờ");
+
+            // 2. Validate ownership
+            if (media.OwnerUserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền xóa giấy tờ này");
+
+            // 3. Validate context
+            if (media.Context != UploadContext.IdentityDocument)
+                throw new InvalidOperationException("File này không phải là giấy tờ tùy thân");
+
+            // 4. Delete from cloud storage
+            if (!string.IsNullOrEmpty(media.ProviderPublicId))
+            {
+                await _storage.DeleteAsync(media.ProviderPublicId, media.MediaType, ct);
+            }
+
+            // 5. Delete from database
+            await _uow.Media.RemoveAsync(media);
             await _uow.SaveChangesAsync();
         }
     }

@@ -16,6 +16,8 @@ namespace BusinessLayer.Reports
     {
         public string Id { get; set; } = default!;
         public string? ReporterId { get; set; }
+        public string? ReporterEmail { get; set; }  // Email của người gửi
+        public string? ReporterUsername { get; set; }  // Username của người gửi
         public string? TargetUserId { get; set; }   // null = Admin
         public string? TargetLessonId { get; set; }
         public string? TargetMediaId { get; set; }
@@ -28,6 +30,7 @@ namespace BusinessLayer.Reports
     {
         public string? ReporterEmail { get; set; }
         public string? TargetUserEmail { get; set; }
+        public string? TargetUsername { get; set; }
         public string? LessonTitle { get; set; }
         public string? MediaFileName { get; set; }
     }

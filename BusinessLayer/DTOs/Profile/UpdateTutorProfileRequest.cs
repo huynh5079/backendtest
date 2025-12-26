@@ -27,7 +27,6 @@ namespace BusinessLayer.DTOs.Profile
         public IEnumerable<string>? SpecialSkills { get; set; }
 
         // Files
-        public IFormFile? AvatarFile { get; set; }               // cho phép đổi avatar
         public List<IFormFile>? NewCertificates { get; set; }    // upload thêm certificate
     }
 }

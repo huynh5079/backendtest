@@ -15,7 +15,11 @@ namespace BusinessLayer.DTOs.Admin.Tutors
         public string TeachingLevel { get; set; }
         public DateTime CreateDate { get; set; }
         public string? AvatarUrl { get; set; } // cho UI tiện hiển thị
+        public double? Rating { get; set; } // rating để hiển thị top tutors
+        public int FeedbackCount { get; set; } // tổng số đánh giá
+        public string? Address { get; set; } // Địa chỉ gia sư
     }
+
 
     public class PublicTutorDetailDto
     {
@@ -28,6 +32,7 @@ namespace BusinessLayer.DTOs.Admin.Tutors
         // Thông tin cá nhân cơ bản
         public string? Gender { get; set; }
         public DateOnly? DateOfBirth { get; set; }
+        public string? Address { get; set; } // Địa chỉ gia sư để học sinh xem khi đặt
 
         // Học vấn/cơ bản
         public string? EducationLevel { get; set; }

@@ -130,13 +130,32 @@ namespace DataLayer.Enum
 
     public enum PaymentProvider
     {
-        MoMo // Cổng thanh toán MoMo (sandbox/production)
+        MoMo, // Cổng thanh toán MoMo (sandbox/production)
+        PayOS // Cổng thanh toán PayOS (QR Napas 24/7)
     }
 
     public enum PaymentContextType
     {
         Escrow,         // Thanh toán cho đơn ký quỹ lớp học
         WalletDeposit   // Nạp tiền trực tiếp vào ví người dùng
+    }
+
+    public enum WithdrawalStatus
+    {
+        Pending,        // Đang chờ admin duyệt
+        Approved,       // Đã được admin duyệt, đang xử lý chuyển tiền
+        Processing,     // Đang xử lý chuyển tiền (đã gọi MoMo API)
+        Completed,      // Đã hoàn thành chuyển tiền thành công
+        Failed,         // Chuyển tiền thất bại
+        Rejected,       // Bị admin từ chối
+        Cancelled       // User hủy yêu cầu
+    }
+
+    public enum WithdrawalMethod
+    {
+        MoMo,           // Chuyển tiền qua MoMo wallet (số điện thoại)
+        BankTransfer,   // Chuyển khoản ngân hàng (sẽ implement sau)
+        PayPal          // PayPal (sẽ implement sau)
     }
 
     // Dùng cho cả Class và ClassRequest
@@ -146,17 +165,23 @@ namespace DataLayer.Enum
         Offline
     }
 
-    // Trạng thái cho ClassRequest
+    // ClassRequest
     public enum ClassRequestStatus
     {
-        Pending,    // Mới tạo, học sinh có thể sửa/hủy
-        Active,     // Đã duyệt, hiển thị cho gia sư
-        Cancelled,  // Học sinh tự hủy
-        Expired,    // Hết hạn (do background job)
-        Matched,    // Đã khớp gia sư (nhưng chờ thanh toán)
-        Ongoing,    // ĐÃ THANH TOÁN, ĐANG HỌC
-        Completed,  // Đã hoàn thành
-        Rejected    // Bị từ chối (ví dụ: gia sư từ chối direct request)
+        Pending,    // New created, can be update, delete, or tutor apply. Shown in tutor marketplace
+        Cancelled,  // Student/Parent cancelled
+        Expired,    
+        Matched,    // Matched with TutorApplication -> create Class
+        Rejected    // Tutor rejected
+    }
+
+    // Class
+    public enum ClassStatus
+    {
+        Pending,    // Class created, having schedule, waiting for students assign in/paid
+        Ongoing,    // paid and having students, in progress
+        Completed,  // Lớp đã kết thúc
+        Cancelled   // Lớp đã bị hủy
     }
 
     // Trạng thái cho TutorApplication
@@ -164,7 +189,8 @@ namespace DataLayer.Enum
     {
         Pending,    // Gia sư mới ứng tuyển
         Accepted,   // Học sinh đã chấp nhận (-> trigger thanh toán)
-        Rejected    // Học sinh đã từ chối
+        Rejected,   // Học sinh đã từ chối
+        Cancelled   // Gia sư hủy ứng tuyển/lớp học chưua được trả tiền
     }
 
     // Dùng cho Bảng Lesson
@@ -175,16 +201,6 @@ namespace DataLayer.Enum
         CANCELLED,  // Đã bị hủy
         STUDENT_ABSENT, // Học sinh vắng
         TUTOR_ABSENT    // Gia sư vắng
-    }
-
-    // Trạng thái cho Class (Lớp học)
-    public enum ClassStatus
-    {
-        Pending,    // Chờ học sinh ghi danh (do Gia sư tạo)
-        Active,     // Lớp đang hoạt động (nhưng chưa đủ học sinh)
-        Ongoing,    // Lớp đang học (được tạo từ Request, hoặc đã đủ học sinh)
-        Completed,  // Lớp đã kết thúc
-        Cancelled   // Lớp đã bị hủy
     }
 
     // Lý do hủy lớp (Admin cancel reason)
@@ -222,16 +238,39 @@ namespace DataLayer.Enum
         WalletWithdraw,           // Rút tiền thành công
         WalletTransferIn,         // Nhận chuyển tiền
         WalletTransferOut,        // Chuyển tiền đi
+        PaymentFailed,            // Thanh toán thất bại
         EscrowPaid,               // Đã thanh toán escrow
         EscrowReleased,           // Escrow đã được giải ngân (cho tutor)
         EscrowRefunded,           // Escrow đã được hoàn tiền (cho payer)
         PayoutReceived,           // Nhận thanh toán từ escrow (cho tutor)
         ClassCancelled,           // Lớp học đã bị hủy (gửi cho tutor và HS)
+        ClassEnrollmentSuccess,   // Ghi danh lớp học thành công (gửi cho student)
+        StudentEnrolledInClass,   // Có học sinh mới ghi danh vào lớp (gửi cho tutor)
+        TutorDepositRefunded,     // Hoàn tiền cọc cho gia sư
+        TutorDepositForfeited,    // Tịch thu tiền cọc gia sư
+
+        // Tutor Application
+        TutorApplicationReceived,  // Có gia sư mới ứng tuyển vào request
+        TutorApplicationAccepted, // Đơn ứng tuyển được chấp nhận
+        TutorApplicationRejected, // Đơn ứng tuyển bị từ chối
+
+        // Class Request
+        ClassRequestReceived,     // Có yêu cầu lớp học mới (gửi cho tutor khi student tạo direct request)
+        ClassRequestAccepted,      // Yêu cầu lớp học được chấp nhận
+        ClassRequestRejected,     // Yêu cầu lớp học bị từ chối
+        ClassCreatedFromRequest,  // Lớp học được tạo từ yêu cầu
+
+        // Lesson & Attendance
+        LessonCompleted,          // Buổi học đã hoàn thành
+        AttendanceMarked,         // Điểm danh đã được ghi nhận
 
         // Reschedule Lessons
         LessonRescheduleRequest,  // Gửi cho Student/Parent khi có yêu cầu mới
         LessonRescheduleAccepted, // Gửi cho Tutor khi được chấp nhận
-        LessonRescheduleRejected  // Gửi cho Tutor khi bị từ chối
+        LessonRescheduleRejected, // Gửi cho Tutor khi bị từ chối
+
+        // Feedback
+        FeedbackCreated           // Đánh giá mới được tạo
     }
 
     // Notification Status
@@ -265,5 +304,28 @@ namespace DataLayer.Enum
         OneToOneOffline = 2,     // 1-1 Offline: 15%
         GroupClassOnline = 3,    // Nhiều học sinh Online: 10%
         GroupClassOffline = 4,   // Nhiều học sinh Offline: 12%
+    }
+
+    public enum QuizType
+    {
+        Practice,  // Bài tập ôn tập - không giới hạn số lần làm
+        Test       // Bài kiểm tra - có giới hạn số lần làm
+    }
+
+    public enum ValidationIssue
+    {
+        None,
+        InappropriateContent,
+        SubjectMismatch,
+        InappropriateImage,
+        InappropriateVideo,
+        InappropriateDocument,
+        UnsupportedFileType
+    }
+
+    public enum StudentResponseAction
+    {
+        Continue,
+        Cancel
     }
 }

@@ -16,5 +16,6 @@ namespace BusinessLayer.Service.Interface
 
         Task<AdminStudentDetailDto?> GetStudentDetailAsync(string userId);
         Task<AdminParentDetailDto?> GetParentDetailAsync(string userId);
+        Task<object> GetDashboardStatisticsAsync();
     }
 }

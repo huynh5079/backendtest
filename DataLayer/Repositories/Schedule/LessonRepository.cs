@@ -45,5 +45,22 @@ namespace DataLayer.Repositories.Schedule
 
             return (lesson, lesson.Class);
         }
+
+        public async Task<IEnumerable<Lesson>> GetByClassWithScheduleEntriesAsync(string classId)
+        {
+            return await _dbSet
+                .Where(l => l.ClassId == classId && l.DeletedAt == null)
+                .Include(l => l.ScheduleEntries)
+                .OrderBy(l => l.CreatedAt)
+                .ToListAsync();
+        }
+
+        public async Task<Lesson?> GetByIdWithClassAndScheduleAsync(string lessonId)
+        {
+            return await _dbSet
+                .Include(l => l.Class)
+                .Include(l => l.ScheduleEntries)
+                .FirstOrDefaultAsync(l => l.Id == lessonId && l.DeletedAt == null);
+        }
     }
 }

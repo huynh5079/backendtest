@@ -19,7 +19,9 @@ namespace BusinessLayer.DTOs.Schedule.ScheduleEntry
         public string? LessonId { get; set; }
         public string? ClassId { get; set; }
         public string? Title { get; set; }
+
         // Join attendance
         public string? AttendanceStatus { get; set; }
+        public string? ClassMode { get; set; }
     }
 }

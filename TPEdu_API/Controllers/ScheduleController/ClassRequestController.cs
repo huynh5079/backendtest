@@ -1,9 +1,12 @@
 using BusinessLayer.DTOs.API;
 using BusinessLayer.DTOs.Schedule.ClassRequest;
+using BusinessLayer.DTOs.Schedule.TutorApplication;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
+using DataLayer.Enum;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using TPEdu_API.Common.Extensions;
 
 namespace TPEdu_API.Controllers
@@ -27,6 +30,7 @@ namespace TPEdu_API.Controllers
             _tutorProfileService = tutorProfileService;
         }
 
+        #region Student & Parent Actions
         /// <summary>
         /// [Student] Tạo một request (direct hoặc marketplace).
         /// </summary>
@@ -34,17 +38,29 @@ namespace TPEdu_API.Controllers
         [Authorize(Roles = "Student,Parent")]
         public async Task<IActionResult> CreateClassRequest([FromBody] CreateClassRequestDto dto)
         {
-            var userId = User.RequireUserId();
-            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Student";
 
-            var result = await _classRequestService.CreateClassRequestAsync(userId, role, dto);
-
-            if (result == null)
+            try
             {
-                return StatusCode(500, ApiResponse<object>.Fail("Lỗi không xác định khi tạo yêu cầu."));
-            }
+                var userId = User.RequireUserId(); // Lấy ID từ Token
+                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
 
-            return CreatedAtAction(nameof(GetClassRequestById), new { id = result.Id }, ApiResponse<ClassRequestResponseDto>.Ok(result));
+                var result = await _classRequestService.CreateClassRequestAsync(userId, role, dto);
+
+                // Trả về 201 Created
+                return CreatedAtAction(nameof(GetClassRequestById), new { id = result?.Id }, ApiResponse<ClassRequestResponseDto>.Ok(result));
+            }
+            catch (ArgumentException ex) // Lỗi thiếu thông tin (vd: Parent không chọn con)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex) // Lỗi không có quyền (không phải con mình)
+            {
+                return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>
@@ -54,6 +70,8 @@ namespace TPEdu_API.Controllers
         [Authorize(Roles = "Student,Parent")]
         public async Task<IActionResult> UpdateClassRequest(string id, [FromBody] UpdateClassRequestDto dto)
         {
+            try
+            {
             var userId = User.RequireUserId();
             var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Student";
 
@@ -61,6 +79,23 @@ namespace TPEdu_API.Controllers
             if (result == null) return NotFound(ApiResponse<object>.Fail("Không tìm thấy yêu cầu."));
 
             return Ok(ApiResponse<ClassRequestResponseDto>.Ok(result, "Cập nhật thành công."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex) // Lỗi logic (vd: status != Pending)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>
@@ -102,17 +137,31 @@ namespace TPEdu_API.Controllers
         /// </summary>
         [HttpGet("my-requests")]
         [Authorize(Roles = "Student,Parent")]
-        public async Task<IActionResult> GetMyClassRequests()
+        public async Task<IActionResult> GetMyClassRequests([FromQuery] string? childId)
         {
+            try
+            {
             var userId = User.GetUserId();
             if (userId == null)
                 return Unauthorized(new { message = "Token không hợp lệ." });
             var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Student";
 
-            var result = await _classRequestService.GetMyClassRequestsAsync(userId, role);
-            return Ok(result);
-        }
+            var result = await _classRequestService.GetMyClassRequestsAsync(userId, role, childId);
+            return Ok(ApiResponse<IEnumerable<ClassRequestResponseDto>>.Ok(result));
 
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+        #endregion
+
+        #region Tutor Actions
         /// <summary>
         /// [Tutor] Lấy các request "Direct" (gửi thẳng) đến TÔI.
         /// </summary>
@@ -133,29 +182,57 @@ namespace TPEdu_API.Controllers
         /// </summary>
         [HttpPatch("{id}/respond")]
         [Authorize(Roles = "Tutor")]
-        public async Task<IActionResult> RespondToDirectRequest(string id, [FromQuery] bool accept)
+        public async Task<IActionResult> RespondToDirectRequest(
+            string id, 
+            [FromQuery] bool accept,
+            [FromBody] UpdateStatusDto? dto = null)
         {
-
+            try
+            {
                 var tutorUserId = User.GetUserId();
                 if (tutorUserId == null)
-                    return Unauthorized(new { message = "Token không hợp lệ." });
+                    return Unauthorized(ApiResponse<object>.Fail("Token không hợp lệ."));
 
-                var classId = await _classRequestService.RespondToDirectRequestAsync(tutorUserId, id, accept);
-                
-                if (accept && !string.IsNullOrEmpty(classId))
+                // Xử lý meetingLink: nếu là empty string thì chuyển thành null
+                string? meetingLink = string.IsNullOrWhiteSpace(dto?.MeetingLink) ? null : dto.MeetingLink;
+
+                var result = await _classRequestService.RespondToDirectRequestAsync(
+                    tutorUserId,
+                    id,
+                    accept,
+                    meetingLink);
+
+                if (accept && result != null)
                 {
-                    return Ok(new { 
-                        message = "Đã chấp nhận yêu cầu.",
-                        classId = classId // Trả về ClassId để học sinh dùng cho thanh toán
-                    });
+                    // 3. Trả về Full DTO cho Frontend (FE cần PaymentRequired để redirect)
+                    return Ok(ApiResponse<AcceptRequestResponseDto>.Ok(result, result.Message));
                 }
                 else
                 {
-                    return Ok(new { message = "Đã từ chối yêu cầu." });
+                    // Logic Reject
+                    return Ok(ApiResponse<object>.Ok(null, "Đã từ chối yêu cầu."));
                 }
-
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object>.Fail($"Lỗi hệ thống: {ex.Message}"));
+            }
         }
+        #endregion
 
+        #region Public Actions
         /// <summary>
         /// [Public] Lấy các request trên "Marketplace" (có phân trang).
         /// </summary>
@@ -173,6 +250,38 @@ namespace TPEdu_API.Controllers
             return Ok(new { TotalCount = totalCount, Data = data });
         }
 
+        [HttpGet("marketplace-tutor")]
+        [Authorize(Roles = "Tutor")]
+        public async Task<IActionResult> GetMarketplaceForTutor(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? subject = null,
+        [FromQuery] string? educationLevel = null,
+        [FromQuery] string? mode = null,
+        [FromQuery] string? locationContains = null)
+        {
+            try
+            {
+                var userId = User.RequireUserId();
+
+                var (data, totalCount) = await _classRequestService.GetMarketplaceForTutorAsync(
+                    userId, page, pageSize, subject, educationLevel, mode, locationContains);
+
+                return Ok(ApiResponse<object>.Ok(new
+                {
+                    totalCount = totalCount,
+                    items = data,
+                    page = page,
+                    pageSize = pageSize
+                }, "Lấy danh sách yêu cầu phù hợp thành công."));
+            }
+            catch (Exception ex)
+            {
+                // Trả về lỗi 400 kèm message chi tiết chúng ta vừa viết ở Service
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
         /// <summary>
         /// [Public] Lấy chi tiết một request.
         /// </summary>
@@ -183,8 +292,21 @@ namespace TPEdu_API.Controllers
             var result = await _classRequestService.GetClassRequestByIdAsync(id);
             if (result == null)
                 return NotFound(new { message = "Không tìm thấy yêu cầu." });
+            
+            // Logic hiển thị địa chỉ:
+            // - Nếu request chưa có tutor (marketplace) → hiển thị địa chỉ cho tutor để họ biết trước khi apply
+            // - Nếu request đã có tutor (direct request) và status là Pending → ẩn địa chỉ cho tutor đó (chưa thanh toán phí kết nối)
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (role == "Tutor" && result.Status == ClassRequestStatus.Pending && result.TutorId != null)
+            {
+                // Chỉ ẩn địa chỉ nếu request đã có tutor (direct request) và chưa thanh toán
+                result.Location = null; // Ẩn địa chỉ học sinh
+            }
+            // Nếu request chưa có tutor (marketplace), địa chỉ sẽ được hiển thị để tutor biết trước khi apply
+            
             return Ok(result);
         }
+        #endregion
 
         /// <summary>
         /// [Admin] Cập nhật trạng thái của một request.

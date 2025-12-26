@@ -1,4 +1,5 @@
-﻿using BusinessLayer.Service.Interface;
+﻿using BusinessLayer.Helper;
+using BusinessLayer.Service.Interface;
 using DataLayer.Enum;
 using DataLayer.Repositories.Abstraction;
 using System;
@@ -33,10 +34,9 @@ namespace BusinessLayer.Service
 
             user.IsBanned = true;
             user.Status = AccountStatus.Banned;
-            user.BannedAt = DateTime.Now;
+            user.BannedAt = DateTimeHelper.GetVietnamTime();
             user.BannedReason = reason;
-            user.BannedUntil = durationDays.HasValue ? DateTime.Now.AddDays(durationDays.Value) : null;
-            user.UpdatedAt = DateTime.Now;
+            user.BannedUntil = durationDays.HasValue ? DateTimeHelper.GetVietnamTime().AddDays(durationDays.Value) : null;
 
             await _uow.Users.UpdateAsync(user);
             await _uow.SaveChangesAsync();
@@ -65,7 +65,6 @@ namespace BusinessLayer.Service
             user.Status = AccountStatus.Active;
             user.BannedUntil = null;
             user.BannedReason = null;
-            user.UpdatedAt = DateTime.Now;
 
             await _uow.Users.UpdateAsync(user);
             await _uow.SaveChangesAsync();

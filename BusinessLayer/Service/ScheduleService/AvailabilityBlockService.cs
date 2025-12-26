@@ -1,4 +1,5 @@
 ﻿using BusinessLayer.DTOs.Schedule.AvailabilityBlock;
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
 using DataLayer.Enum;
@@ -208,7 +209,7 @@ namespace BusinessLayer.Service.ScheduleService
         {
             var occurrences = new List<(DateTime, DateTime)>();
             // start from today
-            var currentDate = DateTime.Today;
+            var currentDate = DateTimeHelper.VietnamNow;
             var untilDate = rule.UntilDate.Date;
 
             // Validate logic for Weekly frequency

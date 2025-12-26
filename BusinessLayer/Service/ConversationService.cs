@@ -1,4 +1,5 @@
 using BusinessLayer.DTOs.Chat;
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface;
 using DataLayer.Entities;
 using DataLayer.Enum;
@@ -71,7 +72,10 @@ namespace BusinessLayer.Service
         public async Task<ConversationDto> GetOrCreateClassConversationAsync(string classId, string userId)
         {
             // Kiểm tra quyền: user phải là tutor hoặc student của lớp
-            var cls = await _uow.Classes.GetByIdAsync(classId);
+            var cls = await _scheduleUow.Classes.GetAsync(
+                filter: c => c.Id == classId,
+                includes: q => q.Include(c => c.Tutor).ThenInclude(t => t.User)
+            );
             if (cls == null)
                 throw new ArgumentException("Lớp học không tồn tại");
 
@@ -94,10 +98,15 @@ namespace BusinessLayer.Service
                 return MapToDto(existing, userId);
             }
 
+            // Lấy tên tutor và tên lớp để tạo title
+            var tutorName = cls.Tutor?.User?.UserName ?? "Gia sư";
+            var className = cls.Title ?? $"Lớp {classId}";
+            var conversationTitle = $"{tutorName} and {className}";
+
             // Tạo mới conversation cho lớp
             var conversation = new Conversation
             {
-                Title = cls.Title ?? $"Lớp {classId}",
+                Title = conversationTitle,
                 Type = ConversationType.Class,
                 ClassId = classId,
                 LastMessageAt = DateTime.Now
@@ -118,13 +127,49 @@ namespace BusinessLayer.Service
                 });
             }
 
-            // Thêm user hiện tại
-            await _uow.Conversations.AddParticipantAsync(new ConversationParticipant
+            // Thêm tất cả học sinh đã enroll vào lớp (PaymentStatus = Paid)
+            var enrolledStudents = await _scheduleUow.ClassAssigns.GetAllAsync(
+                filter: ca => ca.ClassId == classId && ca.PaymentStatus == DataLayer.Enum.PaymentStatus.Paid
+            );
+
+            var addedUserIds = new HashSet<string>(); // Để tránh thêm trùng
+            if (!string.IsNullOrEmpty(tutorUserId))
             {
-                ConversationId = conversation.Id,
-                UserId = userId,
-                Role = "Member"
-            });
+                addedUserIds.Add(tutorUserId);
+            }
+
+            foreach (var assign in enrolledStudents)
+            {
+                if (assign.StudentId != null)
+                {
+                    var studentProfile = await _uow.StudentProfiles.GetByIdAsync(assign.StudentId);
+                    if (studentProfile != null && !string.IsNullOrEmpty(studentProfile.UserId))
+                    {
+                        var studentUserId = studentProfile.UserId;
+                        if (!addedUserIds.Contains(studentUserId))
+                        {
+                            await _uow.Conversations.AddParticipantAsync(new ConversationParticipant
+                            {
+                                ConversationId = conversation.Id,
+                                UserId = studentUserId,
+                                Role = "Member"
+                            });
+                            addedUserIds.Add(studentUserId);
+                        }
+                    }
+                }
+            }
+
+            // Đảm bảo user hiện tại được thêm vào (nếu chưa có)
+            if (!addedUserIds.Contains(userId))
+            {
+                await _uow.Conversations.AddParticipantAsync(new ConversationParticipant
+                {
+                    ConversationId = conversation.Id,
+                    UserId = userId,
+                    Role = "Member"
+                });
+            }
 
             return MapToDto(conversation, userId);
         }
@@ -247,6 +292,76 @@ namespace BusinessLayer.Service
                     Role = p.Role
                 }).ToList()
             };
+        }
+
+        public async Task<bool> DeleteClassConversationAsync(string classId)
+        {
+            try
+            {
+                var conversation = await _uow.Conversations.GetClassConversationAsync(classId);
+                if (conversation == null)
+                    return false; // Không có conversation để xóa
+
+                // Xóa tất cả participants trước
+                var conversationWithParticipants = await _uow.Conversations.GetByIdWithParticipantsAsync(conversation.Id);
+                if (conversationWithParticipants != null && conversationWithParticipants.Participants.Any())
+                {
+                    foreach (var participant in conversationWithParticipants.Participants.ToList())
+                    {
+                        await _uow.Conversations.RemoveParticipantAsync(conversation.Id, participant.UserId);
+                    }
+                }
+
+                // Xóa conversation (soft delete)
+                conversation.DeletedAt = DateTimeHelper.VietnamNow;
+                await _uow.Conversations.UpdateAsync(conversation);
+                await _uow.SaveChangesAsync();
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"DeleteClassConversationAsync error: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> RemoveParticipantFromClassConversationAsync(string classId, string userId)
+        {
+            try
+            {
+                var conversation = await _uow.Conversations.GetClassConversationAsync(classId);
+                if (conversation == null)
+                    return false; // Không có conversation
+
+                await _uow.Conversations.RemoveParticipantAsync(conversation.Id, userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"RemoveParticipantFromClassConversationAsync error: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> RemoveUserFromConversationAsync(string conversationId, string userId)
+        {
+            try
+            {
+                // Kiểm tra user có trong conversation không
+                var participant = await _uow.Conversations.GetParticipantAsync(conversationId, userId);
+                if (participant == null)
+                    return false; // User không có trong conversation
+
+                // Xóa participant
+                await _uow.Conversations.RemoveParticipantAsync(conversationId, userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"RemoveUserFromConversationAsync error: {ex.Message}");
+                return false;
+            }
         }
     }
 }

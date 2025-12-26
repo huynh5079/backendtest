@@ -1082,6 +1082,131 @@ namespace DataLayer.Migrations
                     b.ToTable("PaymentLog", (string)null);
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.Quiz", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("LessonId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("MaxAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PassingScore")
+                        .HasColumnType("int");
+
+                    b.Property<string>("QuizType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("TimeLimit")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "LessonId" }, "IX_Quiz_LessonId");
+
+                    b.ToTable("Quiz", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.QuizQuestion", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("CorrectAnswer")
+                        .IsRequired()
+                        .HasMaxLength(1)
+                        .HasColumnType("nvarchar(1)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Explanation")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OptionA")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("OptionB")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("OptionC")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("OptionD")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Points")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<string>("QuestionText")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("QuizId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "QuizId" }, "IX_QuizQuestion_QuizId");
+
+                    b.HasIndex(new[] { "QuizId", "OrderIndex" }, "IX_QuizQuestion_Quiz_Order");
+
+                    b.ToTable("QuizQuestion", (string)null);
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Report", b =>
                 {
                     b.Property<string>("Id")
@@ -1104,6 +1229,13 @@ namespace DataLayer.Migrations
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("StudentRespondedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("StudentResponse")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("TargetLessonId")
                         .HasColumnType("nvarchar(450)");
@@ -1310,6 +1442,107 @@ namespace DataLayer.Migrations
                     b.ToTable("StudentProfile", (string)null);
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.StudentQuizAnswer", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("AttemptId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsCorrect")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("QuestionId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("SelectedAnswer")
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "AttemptId" }, "IX_StudentQuizAnswer_AttemptId");
+
+                    b.HasIndex(new[] { "QuestionId" }, "IX_StudentQuizAnswer_QuestionId");
+
+                    b.HasIndex(new[] { "AttemptId", "QuestionId" }, "UQ_StudentQuizAnswer_Attempt_Question")
+                        .IsUnique();
+
+                    b.ToTable("StudentQuizAnswer", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.StudentQuizAttempt", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("CorrectAnswers")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsCompleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsPassed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("QuizId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<decimal>("ScorePercentage")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("StudentProfileId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("TotalQuestions")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "QuizId" }, "IX_StudentQuizAttempt_QuizId");
+
+                    b.HasIndex(new[] { "StudentProfileId" }, "IX_StudentQuizAttempt_StudentProfileId");
+
+                    b.HasIndex(new[] { "StudentProfileId", "QuizId", "StartedAt" }, "IX_StudentQuizAttempt_Student_Quiz_Date");
+
+                    b.ToTable("StudentQuizAttempt", (string)null);
+                });
+
             modelBuilder.Entity("DataLayer.Entities.SystemSettings", b =>
                 {
                     b.Property<string>("Id")
@@ -1403,6 +1636,9 @@ namespace DataLayer.Migrations
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("MeetingLink")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1641,6 +1877,72 @@ namespace DataLayer.Migrations
                     b.ToTable("User", (string)null);
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.VideoAnalysis", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("AnalyzedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("KeyPoints")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LessonId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("MediaId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SummaryType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Transcription")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TranscriptionLanguage")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("VideoDurationSeconds")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "LessonId" }, "IX_VideoAnalysis_LessonId");
+
+                    b.HasIndex(new[] { "MediaId" }, "IX_VideoAnalysis_MediaId");
+
+                    b.HasIndex(new[] { "MediaId" }, "UQ_VideoAnalysis_MediaId")
+                        .IsUnique();
+
+                    b.ToTable("VideoAnalysis", (string)null);
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Wallet", b =>
                 {
                     b.Property<string>("Id")
@@ -1689,6 +1991,87 @@ namespace DataLayer.Migrations
                         .HasFilter("[UserId] IS NOT NULL");
 
                     b.ToTable("Wallet", (string)null);
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.WithdrawalRequest", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("AdminNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("PaymentId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProcessedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("RecipientInfo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RecipientName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("TransactionId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "CreatedAt" }, "IX_WithdrawalRequest_CreatedAt");
+
+                    b.HasIndex(new[] { "ProcessedByUserId" }, "IX_WithdrawalRequest_ProcessedByUserId");
+
+                    b.HasIndex(new[] { "Status" }, "IX_WithdrawalRequest_Status");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_WithdrawalRequest_UserId");
+
+                    b.ToTable("WithdrawalRequest", (string)null);
                 });
 
             modelBuilder.Entity("DataLayer.Entities.Attendance", b =>
@@ -2030,6 +2413,30 @@ namespace DataLayer.Migrations
                     b.Navigation("Payment");
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.Quiz", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Lesson", "Lesson")
+                        .WithMany()
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_Quiz_Lesson");
+
+                    b.Navigation("Lesson");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.QuizQuestion", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Quiz", "Quiz")
+                        .WithMany("Questions")
+                        .HasForeignKey("QuizId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_QuizQuestion_Quiz");
+
+                    b.Navigation("Quiz");
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Report", b =>
                 {
                     b.HasOne("DataLayer.Entities.User", "Reporter")
@@ -2131,6 +2538,48 @@ namespace DataLayer.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.StudentQuizAnswer", b =>
+                {
+                    b.HasOne("DataLayer.Entities.StudentQuizAttempt", "Attempt")
+                        .WithMany("Answers")
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_StudentQuizAnswer_Attempt");
+
+                    b.HasOne("DataLayer.Entities.QuizQuestion", "Question")
+                        .WithMany("StudentAnswers")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_StudentQuizAnswer_Question");
+
+                    b.Navigation("Attempt");
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.StudentQuizAttempt", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Quiz", "Quiz")
+                        .WithMany("Attempts")
+                        .HasForeignKey("QuizId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_StudentQuizAttempt_Quiz");
+
+                    b.HasOne("DataLayer.Entities.StudentProfile", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_StudentQuizAttempt_StudentProfile");
+
+                    b.Navigation("Quiz");
+
+                    b.Navigation("Student");
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Transaction", b =>
                 {
                     b.HasOne("DataLayer.Entities.Wallet", "Wallet")
@@ -2211,12 +2660,53 @@ namespace DataLayer.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.VideoAnalysis", b =>
+                {
+                    b.HasOne("DataLayer.Entities.Lesson", "Lesson")
+                        .WithMany()
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_VideoAnalysis_Lesson");
+
+                    b.HasOne("DataLayer.Entities.Media", "Media")
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_VideoAnalysis_Media");
+
+                    b.Navigation("Lesson");
+
+                    b.Navigation("Media");
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Wallet", b =>
                 {
                     b.HasOne("DataLayer.Entities.User", "User")
                         .WithMany("Wallets")
                         .HasForeignKey("UserId")
                         .HasConstraintName("FK_Wallet_User");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.WithdrawalRequest", b =>
+                {
+                    b.HasOne("DataLayer.Entities.User", "ProcessedByUser")
+                        .WithMany()
+                        .HasForeignKey("ProcessedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_WithdrawalRequest_ProcessedByUser");
+
+                    b.HasOne("DataLayer.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_WithdrawalRequest_User");
+
+                    b.Navigation("ProcessedByUser");
 
                     b.Navigation("User");
                 });
@@ -2271,6 +2761,18 @@ namespace DataLayer.Migrations
                     b.Navigation("Logs");
                 });
 
+            modelBuilder.Entity("DataLayer.Entities.Quiz", b =>
+                {
+                    b.Navigation("Attempts");
+
+                    b.Navigation("Questions");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.QuizQuestion", b =>
+                {
+                    b.Navigation("StudentAnswers");
+                });
+
             modelBuilder.Entity("DataLayer.Entities.Role", b =>
                 {
                     b.Navigation("Users");
@@ -2285,6 +2787,11 @@ namespace DataLayer.Migrations
                     b.Navigation("ClassRequests");
 
                     b.Navigation("ParentProfiles");
+                });
+
+            modelBuilder.Entity("DataLayer.Entities.StudentQuizAttempt", b =>
+                {
+                    b.Navigation("Answers");
                 });
 
             modelBuilder.Entity("DataLayer.Entities.TutorProfile", b =>

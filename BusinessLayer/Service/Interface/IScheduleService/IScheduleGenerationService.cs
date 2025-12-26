@@ -12,7 +12,7 @@ namespace BusinessLayer.Service.Interface.IScheduleService
         /// <summary>/// Create a schedule (Lesson + ScheduleEntry) from an accepted ClassRequest.
         /// /// Logic: Repeat the lessons x4 (4 weeks) within the next 50 days.
         /// /// </summary>
-        Task GenerateScheduleFromRequestAsync(
+        Task<DateTime?> GenerateScheduleFromRequestAsync(
             string classId,
             string tutorId,
             DateTime startDate,
@@ -21,7 +21,7 @@ namespace BusinessLayer.Service.Interface.IScheduleService
         /// <summary>/// Create a schedule (Lesson + ScheduleEntry) from an accepted ClassRequest.
         /// /// Logic: Repeat the lessons x4 (4 weeks) within the next 50 days.
         /// /// </summary>
-        Task GenerateScheduleFromClassAsync(
+        Task<DateTime?> GenerateScheduleFromClassAsync(
             string classId,
             string tutorId,
             DateTime startDate,

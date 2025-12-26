@@ -1,4 +1,5 @@
 ﻿using BusinessLayer.DTOs.Schedule.RescheduleRequest;
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface;
 using BusinessLayer.Service.Interface.IScheduleService;
 using DataLayer.Entities;
@@ -52,19 +53,36 @@ namespace BusinessLayer.Service.ScheduleService
             // 3. Kiểm tra logic thời gian
             if (dto.NewStartTime >= dto.NewEndTime)
                 throw new ArgumentException("Giờ kết thúc mới phải sau giờ bắt đầu mới.");
-            if (dto.NewStartTime <= DateTime.Now)
+            if (dto.NewStartTime <= DateTimeHelper.VietnamNow)
                 throw new ArgumentException("Không thể đổi lịch về thời gian trong quá khứ.");
 
-            // 4. KIỂM TRA XUNG ĐỘT LỊCH (Đã dùng Repository)
+            // 4. KIỂM TRA XUNG ĐỘT LỊCH - Dùng giờ Vietnam
             var conflict = await _suow.ScheduleEntries.GetTutorConflictAsync(
-                tutorProfile.Id, dto.NewStartTime.ToUniversalTime(), dto.NewEndTime.ToUniversalTime(), originalEntry.Id);
+                tutorProfile.Id, dto.NewStartTime, dto.NewEndTime, originalEntry.Id);
 
             if (conflict != null)
             {
-                throw new InvalidOperationException($"Lịch đề xuất bị xung đột. Gia sư đã có lịch khác từ {conflict.StartTime} đến {conflict.EndTime}.");
+                throw new InvalidOperationException($"Lịch đề xuất bị xung đột. Gia sư đã có lịch khác từ {conflict.StartTime:dd/MM HH:mm} đến {conflict.EndTime:HH:mm}.");
             }
 
-            // 5. Tạo yêu cầu (Transaction)
+            // 4.1 Kiểm tra xung đột lịch của TẤT CẢ học sinh trong lớp
+            var studentIdsInClass = await _uow.ClassAssigns.GetStudentIdsInClassAsync(lesson.ClassId);
+            foreach (var studentId in studentIdsInClass)
+            {
+                var studentConflict = await _suow.ScheduleEntries.GetStudentConflictAsync(
+                    studentId,
+                    dto.NewStartTime,
+                    dto.NewEndTime,
+                    originalEntry.Id);
+
+                if (studentConflict != null)
+                {
+                    var conflictClassName = studentConflict.Lesson?.Title ?? "lớp khác";
+                    throw new InvalidOperationException($"Lịch đề xuất bị xung đột. Có học sinh đã có lịch học '{conflictClassName}' từ {studentConflict.StartTime:dd/MM HH:mm} đến {studentConflict.EndTime:HH:mm}.");
+                }
+            }
+
+            // 5. Tạo yêu cầu - Dùng giờ Vietnam
             await using var transaction = await _uow.BeginTransactionAsync();
             try
             {
@@ -76,8 +94,8 @@ namespace BusinessLayer.Service.ScheduleService
                     OriginalScheduleEntryId = originalEntry.Id,
                     OldStartTime = originalEntry.StartTime,
                     OldEndTime = originalEntry.EndTime,
-                    NewStartTime = dto.NewStartTime.ToUniversalTime(),
-                    NewEndTime = dto.NewEndTime.ToUniversalTime(),
+                    NewStartTime = dto.NewStartTime,
+                    NewEndTime = dto.NewEndTime,
                     Reason = dto.Reason,
                     Status = RescheduleStatus.Pending
                 };
@@ -165,39 +183,73 @@ namespace BusinessLayer.Service.ScheduleService
 
             if (dto.NewStartTime >= dto.NewEndTime)
                 throw new ArgumentException("Giờ kết thúc mới phải sau giờ bắt đầu mới.");
-            if (dto.NewStartTime <= DateTime.Now)
+            if (dto.NewStartTime <= DateTimeHelper.VietnamNow)
                 throw new ArgumentException("Không thể đổi lịch về thời gian trong quá khứ.");
 
-            // 5. Kiểm tra xung đột lịch của GIA SƯ (vì thầy/cô vẫn phải rảnh khung mới)
+            // 5. Kiểm tra xung đột lịch của GIA SƯ - Dùng giờ Vietnam
             var tutorProfileId = lesson.Class.TutorId;
             if (string.IsNullOrEmpty(tutorProfileId))
                 throw new InvalidOperationException("Không tìm thấy gia sư của lớp.");
 
-            var conflict = await _suow.ScheduleEntries.GetTutorConflictAsync(
+            var tutorConflict = await _suow.ScheduleEntries.GetTutorConflictAsync(
                 tutorProfileId,
-                dto.NewStartTime.ToUniversalTime(),
-                dto.NewEndTime.ToUniversalTime(),
+                dto.NewStartTime,
+                dto.NewEndTime,
                 originalEntry.Id);
 
-            if (conflict != null)
+            if (tutorConflict != null)
             {
-                throw new InvalidOperationException($"Lịch đề xuất bị xung đột. Gia sư đã có lịch khác từ {conflict.StartTime} đến {conflict.EndTime}.");
+                throw new InvalidOperationException($"Lịch đề xuất bị xung đột. Gia sư đã có lịch khác từ {tutorConflict.StartTime:dd/MM HH:mm} đến {tutorConflict.EndTime:HH:mm}.");
             }
 
-            // 6. Tạo request + gửi thông báo cho Gia sư
+            // 5.1 Kiểm tra xung đột lịch của HỌC SINH
+            string? studentProfileIdToCheck = null;
+            if (actorUser.RoleName == "Student")
+            {
+                studentProfileIdToCheck = await _uow.StudentProfiles.GetIdByUserIdAsync(actorUserId);
+            }
+            else if (actorUser.RoleName == "Parent")
+            {
+                var childIds = await _uow.ParentProfiles.GetChildrenIdsAsync(actorUserId);
+                foreach (var childId in childIds)
+                {
+                    if (await _uow.ClassAssigns.IsApprovedAsync(lesson.ClassId, childId))
+                    {
+                        studentProfileIdToCheck = childId;
+                        break;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrEmpty(studentProfileIdToCheck))
+            {
+                var studentConflict = await _suow.ScheduleEntries.GetStudentConflictAsync(
+                    studentProfileIdToCheck,
+                    dto.NewStartTime,
+                    dto.NewEndTime,
+                    originalEntry.Id);
+
+                if (studentConflict != null)
+                {
+                    var conflictClassName = studentConflict.Lesson?.Title ?? "lớp khác";
+                    throw new InvalidOperationException($"Lịch đề xuất bị xung đột. Học sinh đã có lịch học '{conflictClassName}' từ {studentConflict.StartTime:dd/MM HH:mm} đến {studentConflict.EndTime:HH:mm}.");
+                }
+            }
+
+            // 6. Tạo request - Dùng giờ Vietnam
             await using var transaction = await _uow.BeginTransactionAsync();
             try
             {
                 var newRequest = new RescheduleRequest
                 {
                     Id = Guid.NewGuid().ToString(),
-                    RequesterUserId = actorUserId,           // Lúc này người yêu cầu là Student/Parent
+                    RequesterUserId = actorUserId,
                     LessonId = lessonId,
                     OriginalScheduleEntryId = originalEntry.Id,
                     OldStartTime = originalEntry.StartTime,
                     OldEndTime = originalEntry.EndTime,
-                    NewStartTime = dto.NewStartTime.ToUniversalTime(),
-                    NewEndTime = dto.NewEndTime.ToUniversalTime(),
+                    NewStartTime = dto.NewStartTime,
+                    NewEndTime = dto.NewEndTime,
                     Reason = dto.Reason,
                     Status = RescheduleStatus.Pending
                 };
@@ -313,7 +365,7 @@ namespace BusinessLayer.Service.ScheduleService
             {
                 request.Status = accept ? RescheduleStatus.Accepted : RescheduleStatus.Rejected;
                 request.ResponderUserId = actorUserId;
-                request.RespondedAt = DateTime.Now;
+                request.RespondedAt = DateTimeHelper.VietnamNow;
                 await _uow.RescheduleRequests.UpdateAsync(request);
 
                 string title, message;

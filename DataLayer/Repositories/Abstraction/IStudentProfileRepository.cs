@@ -12,5 +12,9 @@ namespace DataLayer.Repositories.Abstraction
     {
         Task<StudentProfile?> GetByUserIdAsync(string userId);
         Task<string?> GetIdByUserIdAsync(string userId);
+
+        // New: For attendance views - includes User navigation
+        Task<StudentProfile?> GetByUserIdWithUserAsync(string userId);
+        Task<StudentProfile?> GetByIdWithUserAsync(string id);
     }
 }

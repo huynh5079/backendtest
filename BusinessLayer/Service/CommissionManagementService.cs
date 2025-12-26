@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using BusinessLayer.DTOs.Wallet;
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface;
 using DataLayer.Repositories.Abstraction;
 
@@ -50,7 +51,7 @@ public class CommissionManagementService : ICommissionManagementService
         if (dto.GroupClassOffline.HasValue)
             commission.GroupClassOffline = dto.GroupClassOffline.Value;
 
-        commission.UpdatedAt = DateTime.UtcNow;
+        commission.UpdatedAt = DateTimeHelper.VietnamNow;
 
         await _uow.Commissions.UpdateAsync(commission);
         await _uow.SaveChangesAsync();

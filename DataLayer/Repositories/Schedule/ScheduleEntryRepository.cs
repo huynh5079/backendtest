@@ -48,5 +48,34 @@ namespace DataLayer.Repositories.Schedule
 
             return await query.FirstOrDefaultAsync();
         }
+
+        public async Task<ScheduleEntry?> GetStudentConflictAsync(string studentProfileId, DateTime startTime, DateTime endTime, string? entryIdToIgnore = null)
+        {
+            // Tìm các lớp mà học sinh đã được approved
+            var studentClassIds = await _context.ClassAssigns
+                .Where(ca => ca.StudentId == studentProfileId && ca.ApprovalStatus == DataLayer.Enum.ApprovalStatus.Approved)
+                .Select(ca => ca.ClassId)
+                .ToListAsync();
+
+            if (!studentClassIds.Any())
+                return null;
+
+            // Tìm schedule entries của các lesson thuộc các lớp đó và có xung đột thời gian
+            var query = _dbSet.AsNoTracking()
+                .Where(se => se.LessonId != null &&
+                             se.Lesson != null &&
+                             se.Lesson.ClassId != null &&
+                             studentClassIds.Contains(se.Lesson.ClassId) &&
+                             se.StartTime < endTime &&
+                             se.EndTime > startTime &&
+                             se.DeletedAt == null);
+
+            if (!string.IsNullOrEmpty(entryIdToIgnore))
+            {
+                query = query.Where(se => se.Id != entryIdToIgnore);
+            }
+
+            return await query.Include(se => se.Lesson).FirstOrDefaultAsync();
+        }
     }
 }

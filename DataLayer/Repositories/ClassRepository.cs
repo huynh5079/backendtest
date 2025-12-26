@@ -30,7 +30,9 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
             .Include(c => c.Subject)
             .Include(c => c.EducationLevel)
             .Include(c => c.ClassSchedules)
-            .Where(c => c.Status == ClassStatus.Active && c.CurrentStudentCount < c.StudentLimit)
+            .Where(c => c.Status == ClassStatus.Pending 
+                     && c.DeletedAt == null
+                     && c.CurrentStudentCount < c.StudentLimit)
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
     }
@@ -47,11 +49,13 @@ public class ClassRepository : GenericRepository<Class>, IClassRepository
         int pageNumber,
         int pageSize)
     {
-        IQueryable<Class> q = _context.Classes
-            .Include(c => c.Tutor)
-                .ThenInclude(t => t!.User)
-            .Include(c => c.ClassSchedules)
-            .Where(c => c.Status == ClassStatus.Active && c.CurrentStudentCount < c.StudentLimit);
+            IQueryable<Class> q = _context.Classes
+                .Include(c => c.Tutor)
+                    .ThenInclude(t => t!.User)
+                .Include(c => c.ClassSchedules)
+                .Where(c => c.Status == ClassStatus.Pending 
+                         && c.DeletedAt == null
+                         && c.CurrentStudentCount < c.StudentLimit);
 
         // Search by keyword (tên lớp, môn học, mô tả, tên gia sư)
         if (!string.IsNullOrWhiteSpace(keyword))

@@ -2,6 +2,10 @@ using DataLayer.Enum;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using DataLayer.Helper;
 
 namespace DataLayer.Entities;
 
@@ -9,6 +13,19 @@ public partial class TpeduContext : DbContext
 {
     public TpeduContext() { }
     public TpeduContext(DbContextOptions<TpeduContext> options) : base(options) { }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var entries = ChangeTracker.Entries<BaseEntity>()
+            .Where(e => e.State == EntityState.Modified);
+
+        foreach (var entry in entries)
+        {
+            entry.Entity.UpdatedAt = DateTimeHelper.GetVietnamTime();
+        }
+
+        return await base.SaveChangesAsync(cancellationToken);
+    }
 
     public virtual DbSet<Attendance> Attendances { get; set; }
     public virtual DbSet<AvailabilityBlock> AvailabilityBlocks { get; set; }
@@ -43,6 +60,14 @@ public partial class TpeduContext : DbContext
     public virtual DbSet<FavoriteTutor> FavoriteTutors { get; set; }
     public virtual DbSet<TutorDepositEscrow> TutorDepositEscrows { get; set; }
     public virtual DbSet<SystemSettings> SystemSettings { get; set; }
+    public virtual DbSet<WithdrawalRequest> WithdrawalRequests { get; set; }
+    
+    // Quiz feature DbSets
+    public virtual DbSet<Quiz> Quizzes { get; set; }
+    public virtual DbSet<QuizQuestion> QuizQuestions { get; set; }
+    public virtual DbSet<StudentQuizAttempt> StudentQuizAttempts { get; set; }
+    public virtual DbSet<StudentQuizAnswer> StudentQuizAnswers { get; set; }
+    public virtual DbSet<VideoAnalysis> VideoAnalyses { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -100,7 +125,11 @@ public partial class TpeduContext : DbContext
             entity.Property(e => e.Description).HasMaxLength(1000);
             entity.Property(e => e.EducationLevel).HasMaxLength(450);
             entity.Property(e => e.Price).HasColumnType("decimal(18, 0)");
-            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(255);
+            // Map 'Active' (old DB value) -> Ongoing (enum value)
+            entity.Property(e => e.Status).HasConversion<string>(
+                v => v.ToString(), // Enum -> string when saving
+                v => v == "Active" ? ClassStatus.Ongoing : (ClassStatus)System.Enum.Parse(typeof(ClassStatus), v, true) // String -> enum when reading
+            ).HasMaxLength(255);
             entity.Property(e => e.Mode).HasConversion<string>().HasMaxLength(50);
             entity.Property(e => e.Subject).HasMaxLength(1000);
             entity.Property(e => e.Title).HasMaxLength(255);
@@ -370,6 +399,9 @@ public partial class TpeduContext : DbContext
 
             entity.Property(e => e.Description).HasMaxLength(1000);
             entity.Property(e => e.Status).HasMaxLength(255).HasConversion<string>();
+            
+            // Student response to auto-report (enum stored as string)
+            entity.Property(e => e.StudentResponse).HasConversion<string>().HasMaxLength(50);
 
             entity.HasOne(d => d.Reporter).WithMany(p => p.ReportReporters)
                 .HasForeignKey(d => d.ReporterId)
@@ -832,6 +864,169 @@ public partial class TpeduContext : DbContext
                 .HasConstraintName("FK_FavoriteTutor_TutorProfile");
         });
         
+        // ===== Quiz Feature Configurations =====
+        
+        modelBuilder.Entity<Quiz>(entity =>
+        {
+            entity.ToTable("Quiz");
+            
+            entity.HasIndex(e => e.LessonId, "IX_Quiz_LessonId");
+            
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(2000);
+            entity.Property(e => e.QuizType).HasConversion<string>().HasMaxLength(50);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            
+            entity.HasOne(d => d.Lesson)
+                .WithMany()
+                .HasForeignKey(d => d.LessonId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_Quiz_Lesson");
+        });
+        
+        modelBuilder.Entity<QuizQuestion>(entity =>
+        {
+            entity.ToTable("QuizQuestion");
+            
+            entity.HasIndex(e => e.QuizId, "IX_QuizQuestion_QuizId");
+            entity.HasIndex(e => new { e.QuizId, e.OrderIndex }, "IX_QuizQuestion_Quiz_Order");
+            
+            entity.Property(e => e.QuestionText).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.OptionA).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.OptionB).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.OptionC).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.OptionD).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CorrectAnswer).HasMaxLength(1).IsRequired();
+            entity.Property(e => e.Explanation).HasMaxLength(1000);
+            entity.Property(e => e.Points).HasDefaultValue(1);
+            
+            entity.HasOne(d => d.Quiz)
+                .WithMany(q => q.Questions)
+                .HasForeignKey(d => d.QuizId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_QuizQuestion_Quiz");
+        });
+        
+        modelBuilder.Entity<StudentQuizAttempt>(entity =>
+        {
+            entity.ToTable("StudentQuizAttempt");
+            
+            entity.HasIndex(e => e.QuizId, "IX_StudentQuizAttempt_QuizId");
+            entity.HasIndex(e => e.StudentProfileId, "IX_StudentQuizAttempt_StudentProfileId");
+            entity.HasIndex(e => new { e.StudentProfileId, e.QuizId, e.StartedAt }, 
+                "IX_StudentQuizAttempt_Student_Quiz_Date");
+            
+            entity.Property(e => e.ScorePercentage).HasColumnType("decimal(5,2)");
+            entity.Property(e => e.IsCompleted).HasDefaultValue(false);
+            entity.Property(e => e.IsPassed).HasDefaultValue(false);
+            
+            entity.HasOne(d => d.Quiz)
+                .WithMany(q => q.Attempts)
+                .HasForeignKey(d => d.QuizId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_StudentQuizAttempt_Quiz");
+            
+            entity.HasOne(d => d.Student)
+                .WithMany()
+                .HasForeignKey(d => d.StudentProfileId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_StudentQuizAttempt_StudentProfile");
+        });
+        
+       modelBuilder.Entity<StudentQuizAnswer>(entity =>
+        {
+            entity.ToTable("StudentQuizAnswer");
+            
+            entity.HasIndex(e => e.AttemptId, "IX_StudentQuizAnswer_AttemptId");
+            entity.HasIndex(e => e.QuestionId, "IX_StudentQuizAnswer_QuestionId");
+            entity.HasIndex(e => new { e.AttemptId, e.QuestionId }, 
+                "UQ_StudentQuizAnswer_Attempt_Question")
+                .IsUnique();
+            
+            entity.Property(e => e.SelectedAnswer).HasMaxLength(4);
+            entity.Property(e => e.IsCorrect).HasDefaultValue(false);
+            
+            entity.HasOne(d => d.Attempt)
+                .WithMany(a => a.Answers)
+                .HasForeignKey(d => d.AttemptId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_StudentQuizAnswer_Attempt");
+            
+            entity.HasOne(d => d.Question)
+                .WithMany(q => q.StudentAnswers)
+                .HasForeignKey(d => d.QuestionId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_StudentQuizAnswer_Question");
+        });
+
+        // ===== Video Analysis Configuration =====
+        modelBuilder.Entity<VideoAnalysis>(entity =>
+        {
+            entity.ToTable("VideoAnalysis");
+
+            entity.HasIndex(e => e.MediaId, "IX_VideoAnalysis_MediaId");
+            entity.HasIndex(e => e.LessonId, "IX_VideoAnalysis_LessonId");
+            entity.HasIndex(e => new { e.MediaId }, "UQ_VideoAnalysis_MediaId")
+                .IsUnique();
+
+            entity.Property(e => e.MediaId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.LessonId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.Transcription).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.TranscriptionLanguage).HasMaxLength(10);
+            entity.Property(e => e.Summary).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.SummaryType).HasMaxLength(50);
+            entity.Property(e => e.KeyPoints).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.Status).HasConversion<int>().IsRequired();
+            entity.Property(e => e.ErrorMessage).HasMaxLength(1000);
+
+            entity.HasOne(d => d.Media)
+                .WithMany()
+                .HasForeignKey(d => d.MediaId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_VideoAnalysis_Media");
+
+            entity.HasOne(d => d.Lesson)
+                .WithMany()
+                .HasForeignKey(d => d.LessonId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_VideoAnalysis_Lesson");
+        });
+
+        // ===== Withdrawal Request Configuration =====
+        modelBuilder.Entity<WithdrawalRequest>(entity =>
+        {
+            entity.ToTable("WithdrawalRequest");
+
+            entity.HasIndex(e => e.UserId, "IX_WithdrawalRequest_UserId");
+            entity.HasIndex(e => e.Status, "IX_WithdrawalRequest_Status");
+            entity.HasIndex(e => e.ProcessedByUserId, "IX_WithdrawalRequest_ProcessedByUserId");
+            entity.HasIndex(e => e.CreatedAt, "IX_WithdrawalRequest_CreatedAt");
+
+            entity.Property(e => e.UserId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(e => e.Method).HasConversion<string>().HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(50).IsRequired();
+            entity.Property(e => e.RecipientInfo).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.RecipientName).HasMaxLength(255);
+            entity.Property(e => e.Note).HasMaxLength(1000);
+            entity.Property(e => e.AdminNote).HasMaxLength(1000);
+            entity.Property(e => e.ProcessedByUserId).HasMaxLength(450);
+            entity.Property(e => e.PaymentId).HasMaxLength(450);
+            entity.Property(e => e.TransactionId).HasMaxLength(450);
+            entity.Property(e => e.FailureReason).HasMaxLength(1000);
+
+            entity.HasOne(d => d.User)
+                .WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_WithdrawalRequest_User");
+
+            entity.HasOne(d => d.ProcessedByUser)
+                .WithMany()
+                .HasForeignKey(d => d.ProcessedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_WithdrawalRequest_ProcessedByUser");
+        });
 
         OnModelCreatingPartial(modelBuilder);
     }

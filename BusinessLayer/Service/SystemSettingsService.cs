@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using BusinessLayer.DTOs.Wallet;
+using BusinessLayer.Helper;
 using BusinessLayer.Service.Interface;
 using DataLayer.Repositories.Abstraction;
 
@@ -42,7 +43,7 @@ namespace BusinessLayer.Service
                 settings.DepositRate = dto.DepositRate.Value;
             }
 
-            settings.UpdatedAt = DateTime.UtcNow;
+            settings.UpdatedAt = DateTimeHelper.VietnamNow;
 
             await _uow.SystemSettings.UpdateAsync(settings);
             await _uow.SaveChangesAsync();

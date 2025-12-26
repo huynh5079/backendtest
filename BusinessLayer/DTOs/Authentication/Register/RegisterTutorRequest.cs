@@ -65,5 +65,9 @@ namespace BusinessLayer.DTOs.Authentication.Register
 
         [Required(ErrorMessage = "Yêu cầu tải căn cước công dân lên")]
         public List<IFormFile>? IdentityDocuments { get; set; }    // CCCD/CMND
+
+        // Chính sách và điều khoản
+        [Required(ErrorMessage = "Bạn phải đồng ý với chính sách và điều khoản để đăng ký")]
+        public bool AcceptPolicy { get; set; }
     }
 }
